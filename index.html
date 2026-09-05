@@ -279,8 +279,10 @@ let netPass = localStorage.getItem('nova_pass')||''; // prototype: wachtwoord on
 
 const canvas=$('game'), ctx=canvas.getContext('2d');
 const mini=$('mini'), mctx=mini.getContext('2d');
-let DPR=1;
-function resize(){ DPR=Math.min(2,window.devicePixelRatio||1); canvas.width=innerWidth*DPR; canvas.height=innerHeight*DPR; canvas.style.width=innerWidth+'px'; canvas.style.height=innerHeight+'px'; }
+let DPR=1, bgGrad=null;
+function resize(){ DPR=Math.min(1.5,window.devicePixelRatio||1); canvas.width=innerWidth*DPR; canvas.height=innerHeight*DPR; canvas.style.width=innerWidth+'px'; canvas.style.height=innerHeight+'px';
+  bgGrad=ctx.createRadialGradient(innerWidth/2,innerHeight/2,100,innerWidth/2,innerHeight/2,Math.max(innerWidth,innerHeight)*.75);
+  bgGrad.addColorStop(0,'#0c1230'); bgGrad.addColorStop(1,'#05070f'); }
 addEventListener('resize',resize); resize();
 
 const mouse={x:innerWidth/2,y:innerHeight/2};
@@ -377,10 +379,7 @@ function updateHUD(){
 function draw(){
   const cam=camFocus();
   ctx.setTransform(DPR,0,0,DPR,0,0);
-  // achtergrond + vignette grid
-  const g=ctx.createRadialGradient(innerWidth/2,innerHeight/2,100,innerWidth/2,innerHeight/2,Math.max(innerWidth,innerHeight)*.75);
-  g.addColorStop(0,'#0c1230'); g.addColorStop(1,'#05070f');
-  ctx.fillStyle=g; ctx.fillRect(0,0,innerWidth,innerHeight);
+  ctx.fillStyle=bgGrad; ctx.fillRect(0,0,innerWidth,innerHeight);
   const zoom=clamp(760/(cam.r*2.4),0.30,1.5);
   ctx.save(); ctx.translate(innerWidth/2,innerHeight/2); ctx.scale(zoom,zoom); ctx.translate(-cam.x,-cam.y);
   // grid
@@ -399,8 +398,12 @@ function draw(){
   for(const f of S.foods){ if(f.x<vx0||f.x>vx1||f.y<vy0||f.y>vy1) continue;
     if(!f.r) f.r=massToR(f.mass);
     ctx.fillStyle=f.color; ctx.globalAlpha=.9; ctx.beginPath(); ctx.arc(f.x,f.y,f.r,0,7); ctx.fill(); ctx.globalAlpha=1; }
-  for(const b of S.bots) if(b.alive) drawCell(b,false);
-  for(const r of S.remotes) if(r.alive) drawCell(r,false);
+  for(const b of S.bots){ if(!b.alive) continue;
+    if(b.x+b.r<vx0||b.x-b.r>vx1||b.y+b.r<vy0||b.y-b.r>vy1) continue; // buiten beeld = niet tekenen
+    drawCell(b,false); }
+  for(const r of S.remotes){ if(!r.alive) continue;
+    if(r.x+r.r<vx0||r.x-r.r>vx1||r.y+r.r<vy0||r.y-r.r>vy1) continue;
+    drawCell(r,false); }
   for(const h of S.humans) if(h.alive&&!h.done) drawCell(h,true);
   ctx.restore();
   // crosshair
@@ -409,22 +412,26 @@ function draw(){
 }
 function drawCell(c,isMe){
   const charging=S&&isMe&&S.charging;
-  const glow=S&&(S.bots.length+S.remotes.length)<45; // glow uit bij drukte = meer fps
-  ctx.fillStyle=c.color; ctx.shadowColor=c.color; ctx.shadowBlur=glow?(charging?40:20):0;
+  // glow alleen voor jezelf: shadowBlur is de duurste canvas-operatie
+  ctx.fillStyle=c.color;
+  if(isMe){ ctx.shadowColor=c.color; ctx.shadowBlur=charging?40:16; }
+  else ctx.shadowBlur=0;
   ctx.beginPath(); ctx.arc(c.x,c.y,c.r,0,7); ctx.fill(); ctx.shadowBlur=0;
-  // glans
-  ctx.fillStyle='rgba(255,255,255,.16)'; ctx.beginPath(); ctx.arc(c.x-c.r*.32,c.y-c.r*.34,c.r*.46,0,7); ctx.fill();
+  // glans alleen voor jezelf
+  if(isMe){ ctx.fillStyle='rgba(255,255,255,.16)'; ctx.beginPath(); ctx.arc(c.x-c.r*.32,c.y-c.r*.34,c.r*.46,0,7); ctx.fill(); }
   // binnenkern
   ctx.fillStyle='rgba(0,0,0,.14)'; ctx.beginPath(); ctx.arc(c.x,c.y,c.r*.72,0,7); ctx.fill();
   if(isMe){ ctx.strokeStyle=charging?'#ffd84d':'#fff'; ctx.lineWidth=Math.max(2,c.r*.06); ctx.beginPath(); ctx.arc(c.x,c.y,c.r,0,7); ctx.stroke();
     if(charging){ ctx.strokeStyle='rgba(255,216,77,.8)'; ctx.setLineDash([10,8]); ctx.lineWidth=3; ctx.beginPath(); ctx.arc(c.x,c.y,c.r+12,0,7); ctx.stroke(); ctx.setLineDash([]); } }
-  // label
+  // label: naam voor iedereen, 2e regel (tekst = duur) alleen voor mensen
   const fs=clamp(c.r*.42,12,30);
   ctx.fillStyle='#fff'; ctx.font='800 '+fs+'px Inter,Segoe UI'; ctx.textAlign='center';
   const tag=c.isPlayer?'':(c.kills>0?' · '+c.kills+'☠':'');
   ctx.fillText(c.name,c.x,c.y-c.r-fs*.5);
-  ctx.font='700 '+Math.max(11,fs*.72)+'px Inter,Segoe UI'; ctx.fillStyle=isMe?'#ffd84d':'rgba(255,255,255,.85)';
-  ctx.fillText(fmt(c.mass)+(c.isPlayer?' massa · '+fmt(c.purse)+' 🪙':' · '+fmt(c.purse)+' 🪙')+tag,c.x,c.y-c.r+Math.max(11,fs*.72)+2);
+  if(isMe||c.remote){
+    ctx.font='700 '+Math.max(11,fs*.72)+'px Inter,Segoe UI'; ctx.fillStyle=isMe?'#ffd84d':'rgba(255,255,255,.85)';
+    ctx.fillText(fmt(c.mass)+(c.isPlayer?' massa · '+fmt(c.purse)+' 🪙':' · '+fmt(c.purse)+' 🪙')+tag,c.x,c.y-c.r+Math.max(11,fs*.72)+2);
+  }
 }
 
 /* ---------- echte server (WebSocket, authoritatief) ---------- */
@@ -435,6 +442,7 @@ const Srv = {
     // bank loopt via je server-account (of gast-saldo) — geen lokale afschrijving
     localStorage.setItem('nova_srv',url);
     S={mode:'connecting',playMode:'net',player:null,humans:[],bots:[],remotes:[],botTarget:40,meta:{},
+      botPool:new Map(),remPool:new Map(),
       foods:[],kills:0,t0:performance.now(),maxMass:CFG.START_MASS,
       charging:false,over:false,last:performance.now(),netEnded:false};
     $('menu').classList.add('hidden'); $('result').classList.add('hidden');
@@ -473,7 +481,7 @@ const Srv = {
   sendInput(wx,wy,c){
     if(!this.ws||this.ws.readyState!==1) return;
     const now=performance.now();
-    if(now-this.lastInput<50) return;
+    if(now-this.lastInput<33) return; // 30×/s input = directere besturing
     this.lastInput=now;
     try{ this.ws.send(JSON.stringify({t:'input',x:Math.round(wx),y:Math.round(wy),c:c?1:0})); }catch(e){}
   }
@@ -497,10 +505,30 @@ function applyNetState(m){
   }
   for(const e of (m.meta||[])) S.meta[e[0]]={n:e[1],c:e[2]}; // namen/kleuren 1× cachen
   const look=id=>S.meta[id]||{n:'…',c:'#5aa8ff'};
+  // object-pooling: hergebruik cellen per id i.p.v. elke snapshot alles nieuw (veel minder GC-haperingen)
   // cel = [id,x,y,massa,vx,vy,beurs,kills]
-  S.bots=(m.bots||[]).map(b=>{const mt=look(b[0]);return{x:b[1],y:b[2],mass:b[3],r:massToR(b[3]),vx:b[4]||0,vy:b[5]||0,alive:true,
-    name:mt.n,color:mt.c,purse:b[6],kills:b[7]||0};});
-  S.remotes=(m.players||[]).map(p=>{const mt=look(p[0]);const c=newCell(p[1],p[2],p[3],mt.n,mt.c);c.remote=true;c.purse=p[6]||0;c.kills=p[7]||0;c.r=massToR(p[3]);c.vx=p[4]||0;c.vy=p[5]||0;c.alive=true;return c;});
+  S.bots.length=0;
+  const aliveB=new Set();
+  for(const b of (m.bots||[])){
+    const mt=look(b[0]);
+    let c=S.botPool.get(b[0]);
+    if(!c){ c=newCell(b[1],b[2],b[3],mt.n,mt.c); S.botPool.set(b[0],c); }
+    c.x=b[1];c.y=b[2];c.mass=b[3];c.r=massToR(b[3]);c.vx=b[4]||0;c.vy=b[5]||0;c.alive=true;
+    c.name=mt.n;c.color=mt.c;c.purse=b[6];c.kills=b[7]||0;
+    S.bots.push(c); aliveB.add(b[0]);
+  }
+  for(const k of S.botPool.keys()) if(!aliveB.has(k)) S.botPool.delete(k);
+  S.remotes.length=0;
+  const aliveR=new Set();
+  for(const p of (m.players||[])){
+    const mt=look(p[0]);
+    let c=S.remPool.get(p[0]);
+    if(!c){ c=newCell(p[1],p[2],p[3],mt.n,mt.c); c.remote=true; S.remPool.set(p[0],c); }
+    c.x=p[1];c.y=p[2];c.mass=p[3];c.r=massToR(p[3]);c.vx=p[4]||0;c.vy=p[5]||0;c.alive=true;
+    c.name=mt.n;c.color=mt.c;c.purse=p[6]||0;c.kills=p[7]||0;
+    S.remotes.push(c); aliveR.add(p[0]);
+  }
+  for(const k of S.remPool.keys()) if(!aliveR.has(k)) S.remPool.delete(k);
   if(m.foods) S.foods=m.foods.map(f=>({x:f[0],y:f[1],mass:f[2],r:massToR(f[2]),color:FOODPAL[Math.abs(f[0]*7+f[1]*13)%FOODPAL.length]})); // voer komt om de beurt binnen
   S.botTarget=m.target||40;
   S.snapT=performance.now();
@@ -516,9 +544,10 @@ function netLoop(){
     const wy=P.y+(mouse.y-innerHeight/2)*(P.r/320+0.55);
     Srv.sendInput(wx,wy,S.charging);
     if(now-Srv.lastPing>2000){ Srv.lastPing=now; try{ Srv.ws&&Srv.ws.readyState===1&&Srv.ws.send(JSON.stringify({t:'ping',t:now})); }catch(e){} }
-    // dead reckoning: beweeg bots/spelers door op hun snelheid → vloeiend tussen snapshots
+    // dead reckoning: alles (ook jezelf!) doorbewegen op snelheid → directe feel tussen snapshots
     const dtS=Math.min(.25,(now-(S.snapT||now))/1000);
     S.snapT=now;
+    P.x+=P.vx*dtS; P.y+=P.vy*dtS;
     for(const b of S.bots){ b.x+=b.vx*dtS; b.y+=b.vy*dtS; }
     for(const r of S.remotes){ r.x+=r.vx*dtS; r.y+=r.vy*dtS; }
     // cashout-ring volgt de server-timer (authoritatief)
