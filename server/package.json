@@ -1,0 +1,20 @@
+{
+  "name": "nova-orbs-server",
+  "version": "1.0.0",
+  "description": "Dedicated multiplayer server voor NOVA ORBS (Agar.io-style coin arena)",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "tunnel": "cloudflared tunnel --url http://localhost:3000",
+    "share": "lt --port 3000"
+  },
+  "devDependencies": {
+    "localtunnel": "^2.0.2"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  }
+}
