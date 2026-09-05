@@ -1,0 +1,15 @@
+{
+  "name": "nova-orbs",
+  "version": "1.0.0",
+  "description": "NOVA-ORBS.io — Agar.io-style coin arena (server + client)",
+  "main": "server/server.js",
+  "scripts": {
+    "start": "node server/server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  }
+}
