@@ -500,19 +500,56 @@ const TDEC=("TextDecoder" in window)?new TextDecoder():null;
 /* binair snapshot parsen (zelfde layout als server/server.js) */
 function applyNetBin(ab){
   try{
-    const v=new DataView(ab); let o=0;
-    const nB=v.getUint16(o,true);o+=2, nP=v.getUint16(o,true);o+=2, nF=v.getUint16(o,true);o+=2, nM=v.getUint16(o,true);o+=2;
-    const rcell=()=>{ const id=v.getUint16(o,true);o+=2, x=v.getInt16(o,true);o+=2, y=v.getInt16(o,true);o+=2,
-      mass=v.getUint32(o,true);o+=4, vx=v.getInt16(o,true)/10;o+=2, vy=v.getInt16(o,true)/10;o+=2,
-      purse=v.getUint32(o,true);o+=4, kills=v.getUint16(o,true);o+=2;
-      return [id,x,y,mass,vx,vy,purse,kills]; };
-    const bcells=[]; for(let i=0;i<nB;i++) bcells.push(rcell());
-    const pcells=[]; for(let i=0;i<nP;i++) pcells.push(rcell());
-    const farr=(nF>0)?[]:null;
-    if(nF>0){ for(let i=0;i<nF;i++){ const x=v.getInt16(o,true);o+=2, y=v.getInt16(o,true);o+=2, mm=v.getUint16(o,true);o+=2; farr.push([x,y,mm]); } }
-    const yx=v.getInt16(o,true);o+=2, yy=v.getInt16(o,true);o+=2, ym=v.getUint32(o,true);o+=4,
-      yvx=v.getInt16(o,true);o+=2, yvy=v.getInt16(o,true);o+=2, yp=v.getUint32(o,true);o+=4,
-      yk=v.getUint16(o,true);o+=2, ya=v.getUint8(o);o+=1, yce=v.getFloat32(o,true);o+=4; o+=1; // charging-byte overgeslagen
+    const v=new DataView(ab);
+    let o=0;
+    const nB=v.getUint16(o,true); o+=2;
+    const nP=v.getUint16(o,true); o+=2;
+    const nF=v.getUint16(o,true); o+=2;
+    const nM=v.getUint16(o,true); o+=2;
+    const bcells=[];
+    for(let i=0;i<nB;i++){
+      const id=v.getUint16(o,true); o+=2;
+      const x=v.getInt16(o,true); o+=2;
+      const y=v.getInt16(o,true); o+=2;
+      const mass=v.getUint32(o,true); o+=4;
+      const vx=v.getInt16(o,true)/10; o+=2;
+      const vy=v.getInt16(o,true)/10; o+=2;
+      const purse=v.getUint32(o,true); o+=4;
+      const kills=v.getUint16(o,true); o+=2;
+      bcells.push([id,x,y,mass,vx,vy,purse,kills]);
+    }
+    const pcells=[];
+    for(let i=0;i<nP;i++){
+      const id=v.getUint16(o,true); o+=2;
+      const x=v.getInt16(o,true); o+=2;
+      const y=v.getInt16(o,true); o+=2;
+      const mass=v.getUint32(o,true); o+=4;
+      const vx=v.getInt16(o,true)/10; o+=2;
+      const vy=v.getInt16(o,true)/10; o+=2;
+      const purse=v.getUint32(o,true); o+=4;
+      const kills=v.getUint16(o,true); o+=2;
+      pcells.push([id,x,y,mass,vx,vy,purse,kills]);
+    }
+    let farr=null;
+    if(nF>0){
+      farr=[];
+      for(let i=0;i<nF;i++){
+        const x=v.getInt16(o,true); o+=2;
+        const y=v.getInt16(o,true); o+=2;
+        const mm=v.getUint16(o,true); o+=2;
+        farr.push([x,y,mm]);
+      }
+    }
+    const yx=v.getInt16(o,true); o+=2;
+    const yy=v.getInt16(o,true); o+=2;
+    const ym=v.getUint32(o,true); o+=4;
+    const yvx=v.getInt16(o,true); o+=2;
+    const yvy=v.getInt16(o,true); o+=2;
+    const yp=v.getUint32(o,true); o+=4;
+    const yk=v.getUint16(o,true); o+=2;
+    const ya=v.getUint8(o); o+=1;
+    const yce=v.getFloat32(o,true); o+=4;
+    o+=1; // charging-byte overgeslagen
     if(!S.player){
       const c=newCell(yx,yy,ym,'JIJ','#5ef2b8');
       c.isPlayer=true; S.player=c; S.humans=[c];
@@ -522,10 +559,11 @@ function applyNetBin(ab){
     P.purse=yp;P.kills=yk;P.alive=!!ya;P.ce=yce||0;
     S.kills=P.kills; S.maxMass=Math.max(S.maxMass,P.mass);
     for(let i=0;i<nM;i++){
-      const id=v.getUint16(o,true);o+=2, len=v.getUint8(o);o+=1;
+      const id=v.getUint16(o,true); o+=2;
+      const len=v.getUint8(o); o+=1;
       const bytes=new Uint8Array(ab,o,len); o+=len;
       const nm=TDEC?TDEC.decode(bytes):'…';
-      const ci=v.getUint8(o);o+=1;
+      const ci=v.getUint8(o); o+=1;
       S.meta[id]={n:nm,c:PAL[ci]||'#5aa8ff'};
     }
     const look=id=>S.meta[id]||{n:'…',c:'#5aa8ff'};
