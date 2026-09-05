@@ -1,0 +1,7 @@
+services:
+  - type: web
+    name: nova-orbs
+    env: node
+    plan: free
+    buildCommand: npm --prefix server install
+    startCommand: node server/server.js

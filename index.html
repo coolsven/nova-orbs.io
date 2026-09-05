@@ -1,0 +1,634 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>NOVA-ORBS.io — Eat. Hunt. Cash Out.</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#070a14; --panel:#0e1428; --panel2:#141c38;
+    --line:rgba(255,255,255,.09);
+    --txt:#eef2ff; --dim:#9aa3c7;
+    --mint:#5ef2b8; --gold:#ffd84d; --red:#ff5a6e; --blue:#5aa8ff;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%;overflow:hidden}
+  body{font-family:Inter,'Segoe UI',system-ui,-apple-system,sans-serif;background:var(--bg);color:var(--txt);user-select:none;-webkit-user-select:none}
+  canvas#game{position:fixed;inset:0;display:block;cursor:crosshair}
+  /* ---------- HUD ---------- */
+  #hud{position:fixed;top:0;left:0;right:0;z-index:10;display:flex;justify-content:space-between;align-items:flex-start;padding:12px 14px;gap:10px;pointer-events:none}
+  .cluster{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+  .brand{background:rgba(7,10,20,.7);border:1px solid var(--line);border-radius:12px;padding:8px 14px;font-weight:900;letter-spacing:2px;font-size:14px;backdrop-filter:blur(8px)}
+  .brand em{color:var(--mint);font-style:normal}
+  .stat{background:rgba(7,10,20,.7);border:1px solid var(--line);border-radius:12px;padding:7px 12px;font-size:13px;font-weight:700;backdrop-filter:blur(8px);white-space:nowrap}
+  .stat small{display:block;font-size:10px;font-weight:700;color:var(--dim);letter-spacing:.8px;text-transform:uppercase}
+  .stat b{font-size:15px}
+  .stat.gold b{color:var(--gold)} .stat.mint b{color:var(--mint)}
+  #board{background:rgba(7,10,20,.72);border:1px solid var(--line);border-radius:14px;padding:10px 12px;min-width:190px;backdrop-filter:blur(8px);pointer-events:none}
+  #board h4{font-size:11px;letter-spacing:1.2px;color:var(--dim);margin-bottom:8px;text-transform:uppercase}
+  #board ol{list-style:none;font-size:13px;display:flex;flex-direction:column;gap:4px}
+  #board li{display:flex;justify-content:space-between;gap:10px;font-weight:600}
+  #board li.me{color:var(--mint)}
+  #board li .crown{color:var(--gold)}
+  /* ---------- feed / toast ---------- */
+  #feed{position:fixed;left:14px;bottom:170px;z-index:10;display:flex;flex-direction:column-reverse;gap:6px;pointer-events:none;max-width:min(60vw,340px)}
+  .feed{background:rgba(0,0,0,.55);border:1px solid var(--line);padding:6px 11px;border-radius:9px;font-size:12.5px;animation:fin 5s forwards}
+  .feed.good{border-color:rgba(94,242,184,.5)} .feed.bad{border-color:rgba(255,90,110,.5)} .feed.gold{border-color:rgba(255,216,77,.5);color:var(--gold)}
+  @keyframes fin{0%{opacity:1;transform:translateY(0)}80%{opacity:1}100%{opacity:0;transform:translateY(6px)}}
+  #toast{position:fixed;left:50%;top:32%;transform:translate(-50%,-50%);z-index:11;pointer-events:none;text-align:center}
+  .pop{font-weight:900;font-size:30px;text-shadow:0 4px 24px rgba(0,0,0,.7);animation:pop 1.6s forwards}
+  @keyframes pop{0%{opacity:0;transform:scale(.6)}12%{opacity:1;transform:scale(1.1)}25%{transform:scale(1)}75%{opacity:1}100%{opacity:0;transform:translateY(-34px)}}
+  /* ---------- minimap ---------- */
+  #mini{position:fixed;left:14px;bottom:14px;z-index:10;width:150px;height:150px;border-radius:12px;border:1px solid var(--line);background:rgba(7,10,20,.7)}
+  /* ---------- cashout ---------- */
+  #cashWrap{position:fixed;right:16px;bottom:16px;z-index:12;display:none;flex-direction:column;align-items:center;gap:8px}
+  #cashRing{position:relative;width:132px;height:132px}
+  #cashRing svg{transform:rotate(-90deg)}
+  #cashBtn{position:absolute;inset:10px;border-radius:50%;border:2px solid rgba(255,216,77,.55);background:radial-gradient(circle at 32% 28%,#232c55,#12173a 70%);color:var(--gold);font-family:inherit;font-weight:900;cursor:pointer;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;touch-action:none;user-select:none;-webkit-user-select:none}
+  #cashBtn small{font-size:10px;letter-spacing:1px;color:var(--dim)}
+  #cashBtn .amt{font-size:19px;color:var(--gold)}
+  #cashBtn .tmr{font-size:12px;color:#fff;min-height:16px;font-variant-numeric:tabular-nums}
+  #cashBtn.charging{border-color:#ffe98a;background:radial-gradient(circle at 32% 28%,#6b5514,#3a2f08 70%);box-shadow:0 0 34px rgba(255,216,77,.45)}
+  #cashHint{font-size:11px;color:var(--dim);background:rgba(0,0,0,.5);padding:5px 10px;border-radius:999px;max-width:190px;text-align:center}
+  /* ---------- multiplayer / inputs ---------- */
+  #cashWrap2{position:fixed;left:16px;bottom:170px;z-index:12;display:none;flex-direction:column;align-items:center;gap:8px}
+  #cashRing2{position:relative;width:112px;height:112px}
+  #cashRing2 svg{transform:rotate(-90deg)}
+  #cashBtn2{position:absolute;inset:9px;border-radius:50%;border:2px solid rgba(255,138,178,.6);background:radial-gradient(circle at 32% 28%,#3a2340,#1c1026 70%);color:#ff8ab2;font-family:inherit;font-weight:900;cursor:pointer;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;touch-action:none;user-select:none;-webkit-user-select:none}
+  #cashBtn2 small{font-size:9px;letter-spacing:1px;color:var(--dim)}
+  #cashBtn2 .amt{font-size:16px;color:#ff8ab2}
+  #cashBtn2 .tmr{font-size:11px;color:#fff;min-height:15px;font-variant-numeric:tabular-nums}
+  #cashBtn2.charging{border-color:#ffb3cd;box-shadow:0 0 30px rgba(255,138,178,.5)}
+  .mtabs{display:flex;gap:8px;margin-bottom:12px}
+  .mtab{flex:1;border:1px solid var(--line);background:#0a0f24;color:var(--dim);border-radius:12px;padding:10px 6px;font-family:inherit;font-weight:800;font-size:13px;cursor:pointer}
+  .mtab small{display:block;font-weight:600;font-size:11px;margin-top:2px}
+  .mtab.on{border-color:var(--mint);color:#fff;background:#10203a;box-shadow:0 0 0 1px var(--mint) inset}
+  .numRow{display:flex;gap:8px;align-items:center;justify-content:center;margin-top:10px;flex-wrap:wrap}
+  .numRow label{font-size:12px;color:var(--dim);font-weight:700}
+  .numRow input,.numRow select{background:#0a0f24;border:1px solid var(--line);color:#fff;border-radius:9px;padding:8px 10px;font-family:inherit;font-weight:700;font-size:14px;width:110px;text-align:center}
+  .numRow select{width:auto}
+  .miniBtn{background:#232c55;border:none;border-radius:9px;color:#fff;padding:8px 14px;font-family:inherit;font-weight:800;font-size:13px;cursor:pointer}
+  .miniBtn:hover{background:#2e3870}
+  #modeHint{font-size:12px;color:var(--mint);margin-top:8px;min-height:18px}
+  /* ---------- overlays ---------- */
+  .overlay{position:fixed;inset:0;z-index:30;display:flex;align-items:center;justify-content:center;background:rgba(4,6,14,.78);backdrop-filter:blur(10px);padding:16px;overflow-y:auto}
+  .overlay.hidden{display:none}
+  .card{background:linear-gradient(180deg,var(--panel2),var(--panel));border:1px solid var(--line);border-radius:22px;padding:28px;width:min(520px,94vw);text-align:center;box-shadow:0 30px 80px rgba(0,0,0,.6);margin:auto}
+  .logo{font-size:13px;letter-spacing:4px;color:var(--mint);font-weight:800}
+  h1{font-size:34px;font-weight:900;margin:6px 0 2px} h1 span{color:var(--mint)}
+  .sub{color:var(--dim);font-size:13.5px;margin-bottom:16px}
+  .econ{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px}
+  .econ div{background:#0a0f24;border:1px solid var(--line);border-radius:12px;padding:9px;font-size:12px;color:var(--dim);line-height:1.5}
+  .econ div b{display:block;font-size:15px;color:#fff;margin-top:2px}
+  .econ .g b{color:var(--gold)} .econ .m b{color:var(--mint)}
+  .wagerBox{background:#0a0f24;border:1px solid var(--line);border-radius:14px;padding:14px;margin-bottom:12px}
+  .wagerRow{display:flex;align-items:center;justify-content:center;gap:12px;margin:8px 0}
+  .wagerRow .amount{font-size:34px;font-weight:900;color:var(--gold);min-width:130px;font-variant-numeric:tabular-nums}
+  .step{width:48px;height:48px;border-radius:12px;border:none;background:#232c55;color:#fff;font-size:26px;font-weight:800;cursor:pointer}
+  .step:hover{background:#2e3870}
+  .presets{display:flex;gap:7px;justify-content:center;flex-wrap:wrap}
+  .preset{background:#232c55;border:none;border-radius:9px;color:var(--txt);padding:7px 13px;font-size:13px;cursor:pointer;font-weight:700}
+  .preset.on{background:var(--gold);color:#111}
+  .tableLine{font-size:13px;color:var(--gold);margin-top:10px}
+  .rules{text-align:left;background:#080c1e;border-radius:12px;padding:13px 15px;font-size:12.8px;line-height:1.75;color:#c4cbe8;margin:12px 0 16px}
+  .rules b{color:var(--gold)} .rules i{color:var(--mint);font-style:normal;font-weight:700}
+  .btn{border:none;border-radius:13px;cursor:pointer;font-weight:900;font-size:16px;padding:14px 26px;font-family:inherit;transition:transform .06s,filter .15s}
+  .btn:active{transform:translateY(2px) scale(.98)}
+  .btn-go{background:linear-gradient(180deg,#5ef2b8,#2ecf8f);color:#06281c;width:100%}
+  .btn-go:hover{filter:brightness(1.07)}
+  .btn-again{background:linear-gradient(180deg,#ffd84d,#f0b429);color:#241a02;width:100%;margin-top:10px}
+  .btn-ghost{background:transparent;color:var(--dim);border:1px solid var(--line);width:100%;margin-top:8px;font-size:13px;padding:10px}
+  .bigNum{font-size:44px;font-weight:900;margin:4px 0}
+  .win{color:var(--mint)} .lose{color:var(--red)}
+  .statGrid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin:14px 0}
+  .statGrid div{background:#0a0f24;border:1px solid var(--line);border-radius:10px;padding:8px 4px;font-size:11px;color:var(--dim)}
+  .statGrid b{display:block;font-size:16px;color:#fff}
+  #bankrupt{display:none;margin-top:10px;font-size:13px;color:var(--gold)}
+  kbd{background:#232c55;border-radius:5px;padding:1px 6px;font-size:11px;font-family:inherit}
+  /* ---------- arcade menu theme (NOVA-ORBS.io) ---------- */
+  .mcard{background:#1a2342;border:1px solid rgba(255,255,255,.08);border-radius:26px;padding:22px;width:min(480px,94vw);box-shadow:0 30px 80px rgba(0,0,0,.6);display:flex;flex-direction:column;gap:16px;margin:auto}
+  .mtop{display:flex;justify-content:space-between;align-items:center}
+  .bal{font-family:'Press Start 2P',monospace;color:var(--gold);font-size:15px;text-shadow:2px 2px 0 #000}
+  .mbtns{display:flex;gap:10px}
+  .abtn{font-family:'Press Start 2P',monospace;font-size:11px;color:var(--gold);background:#2b3560;border:none;border-radius:12px;padding:12px 16px;cursor:pointer;text-shadow:1px 1px 0 #000}
+  .abtn:active{transform:translateY(2px)}
+  .title{font-family:'Press Start 2P',monospace;color:var(--gold);font-size:clamp(20px,6vw,32px);text-align:center;text-shadow:3px 3px 0 #000;margin:14px 0 8px;line-height:1.4}
+  .wbar{background:#2b3560;border-radius:14px;display:flex;align-items:center;justify-content:space-around;padding:14px 8px}
+  .wbar button{background:none;border:none;color:#fff;font-size:26px;cursor:pointer;width:64px;font-family:inherit}
+  .wbar button:active{transform:scale(.92)}
+  .wbar .wv{font-family:'Press Start 2P',monospace;color:#fff;font-size:13px;min-width:100px;text-align:center}
+  .pbar{background:#2b3560;border-radius:14px;display:flex;justify-content:space-around;padding:12px 6px;gap:2px}
+  .pbar button{background:none;border:none;font-family:'Press Start 2P',monospace;font-size:10px;color:var(--gold);cursor:pointer;padding:8px 6px;text-shadow:1px 1px 0 #000;border-radius:8px}
+  .pbar button.on{background:rgba(255,216,77,.15);outline:1px solid var(--gold)}
+  .playbtn{background:#141414;color:#fff;border:none;border-radius:16px;font-family:'Press Start 2P',monospace;font-size:20px;padding:20px;cursor:pointer;box-shadow:0 6px 0 #000}
+  .playbtn:active{transform:translateY(3px);box-shadow:none}
+  .mfoot{display:flex;justify-content:space-between}
+  .icobtn{width:56px;height:56px;border-radius:14px;background:#2b3560;border:none;font-size:24px;cursor:pointer;color:#fff;font-family:inherit}
+  .icobtn:active{transform:translateY(2px)}
+  .srvmini{display:flex;gap:8px}
+  .srvmini input{flex:1;background:#10162e;border:1px solid var(--line);color:#9aa3c7;border-radius:10px;padding:9px 10px;font-family:monospace;font-size:11px;min-width:0}
+  .srvmini .abtn{padding:9px 12px}
+  .modal .mcard{gap:12px}
+  .mfield{display:flex;flex-direction:column;gap:6px;text-align:left}
+  .mfield label{font-family:'Press Start 2P',monospace;font-size:9px;color:var(--dim)}
+  .mfield input{background:#10162e;border:1px solid var(--line);color:#fff;border-radius:10px;padding:12px;font-family:inherit;font-size:14px}
+  .mrow{display:flex;gap:10px}
+  .mrow .abtn{flex:1}
+  .mclose{background:transparent;border:none;color:var(--dim);font-family:'Press Start 2P',monospace;font-size:10px;cursor:pointer;padding:8px}
+  .mtxt{font-size:13px;line-height:1.8;color:#c4cbe8;text-align:left}
+  .mtxt b{color:var(--gold)} .mtxt i{color:var(--mint);font-style:normal;font-weight:700}
+  @media(max-width:760px){ #board{display:none} #mini{width:110px;height:110px} .statGrid{grid-template-columns:repeat(2,1fr)} }
+</style>
+</head>
+<body>
+<canvas id="game"></canvas>
+
+<div id="hud">
+  <div class="cluster">
+    <div class="brand">NOVA <em>ORBS</em></div>
+    <div class="stat"><small>Massa</small><b id="hMass">0</b></div>
+    <div class="stat"><small>Kills</small><b id="hKills">0</b></div>
+    <div class="stat"><small>Alive</small><b id="hAlive">–</b></div>
+    <div class="stat"><small>Modus</small><b id="hMode">SOLO</b></div>
+  </div>
+  <div class="cluster">
+    <div class="stat"><small>Bank (veilig)</small><b id="hBank">1.000</b></div>
+    <div class="stat gold"><small>Beurs (op tafel)</small><b id="hPurse">0</b></div>
+    <div class="stat mint"><small>Cashout-potentieel</small><b id="hNet">0</b></div>
+  </div>
+</div>
+
+<div id="board" style="position:fixed;right:14px;top:76px;z-index:10">
+  <h4>🏆 Leaderboard</h4>
+  <ol id="boardList"></ol>
+</div>
+
+<div id="feed"></div>
+<div id="toast"></div>
+<canvas id="mini" width="150" height="150"></canvas>
+
+<div id="cashWrap">
+  <div id="cashRing">
+    <svg width="132" height="132"><circle cx="66" cy="66" r="58" fill="none" stroke="#232c55" stroke-width="9"/><circle id="cashArc" cx="66" cy="66" r="58" fill="none" stroke="#ffd84d" stroke-width="9" stroke-linecap="round" stroke-dasharray="364.4" stroke-dashoffset="364.4"/></svg>
+    <button id="cashBtn"><small>CASH OUT</small><span class="amt" id="cashAmt">0</span><span class="tmr" id="cashTmr">HOLD 10s</span></button>
+  </div>
+  <div id="cashHint">Houd <b>10s</b> ingedrukt (knop, touchscreen of <b>Q</b>). Loslaten of dood = geannuleerd.</div>
+</div>
+
+<!-- LOBBY -->
+<div class="overlay" id="menu">
+  <div class="mcard">
+    <div class="mtop">
+      <div class="bal">$:<span id="menuBal">1.000</span></div>
+      <div class="mbtns"><button class="abtn" id="loginBtn">login</button><button class="abtn" id="signinBtn">signin</button></div>
+    </div>
+    <div class="title">NOVA-ORBS.io</div>
+    <div class="wbar"><button id="wMinus">−</button><span class="wv" id="wAmt">100</span><button id="wPlus">+</button></div>
+    <div class="pbar" id="presets">
+      <button data-p="50">50</button><button data-p="100">100</button><button data-p="250">250</button><button data-p="1000">1000</button><button data-p="max">MAX</button>
+    </div>
+    <button class="playbtn" id="startBtn">play</button>
+    <div class="mfoot"><button class="icobtn" id="shopBtn">🛒</button><button class="icobtn" id="helpBtn">?</button></div>
+    <div class="srvmini"><input id="srvUrl" type="text" inputmode="url" spellcheck="false" placeholder="wss://..."><button class="abtn" id="srvReset" title="standaardserver">↺</button></div>
+  </div>
+</div>
+
+<!-- AUTH -->
+<div class="overlay hidden modal" id="authModal">
+  <div class="mcard">
+    <div class="title" id="authTitle" style="font-size:18px">login</div>
+    <div class="mfield"><label>username</label><input id="authUser" maxlength="16" autocomplete="username"></div>
+    <div class="mfield"><label>password</label><input id="authPass" type="password" autocomplete="current-password"></div>
+    <div class="mrow"><button class="abtn" id="authGo">go</button></div>
+    <div class="mtxt" id="authMsg" style="text-align:center;min-height:22px"></div>
+    <button class="mclose" id="authClose">close</button>
+  </div>
+</div>
+
+<!-- SHOP -->
+<div class="overlay hidden modal" id="shopModal">
+  <div class="mcard">
+    <div class="title" style="font-size:18px">shop</div>
+    <div class="mtxt" style="text-align:center">saldo: <b>$:<span id="shopBal">0</span></b></div>
+    <div class="mrow"><button class="abtn" id="claimBtn">+500 gratis</button></div>
+    <div class="mtxt" id="shopMsg" style="text-align:center;font-size:11px;min-height:20px">gratis coins · max 1× per 5 min · prototype, geen echt geld</div>
+    <button class="mclose" id="shopClose">close</button>
+  </div>
+</div>
+
+<!-- HELP -->
+<div class="overlay hidden modal" id="helpModal">
+  <div class="mcard">
+    <div class="title" style="font-size:18px">how to play</div>
+    <div class="mtxt">
+      · Iedereen zet <b>dezelfde inzet</b> in, live tegen echte spelers + bots.<br>
+      · Coins krijg je <b>alleen</b> door spelers op te eten — voer maakt je alleen <i>groter</i>.<br>
+      · Houd <b>CASH OUT 10s</b> vast (knop, touchscreen of <b>Q</b>) om te banken. Loslaten of dood = weg.<br>
+      · Dood = inzet kwijt. <b>Geen tijdslimiet.</b><br>
+      · Groot = trager. Klein = snel en wendbaar.
+    </div>
+    <button class="mclose" id="helpClose">close</button>
+  </div>
+</div>
+
+<!-- RESULT -->
+<div class="overlay hidden" id="result">
+  <div class="mcard">
+    <div class="bal" id="rTitle" style="text-align:center">einde potje</div>
+    <div class="title" id="rNum">+0</div>
+    <div class="mtxt" id="rLine" style="text-align:center"></div>
+    <div class="mtxt" style="text-align:center">kills <b id="rKills">0</b> · massa <b id="rMass">0</b> · tijd <b id="rTime">0s</b> · bank <b>$:<span id="rBank">0</span></b></div>
+    <button class="playbtn" id="againBtn">again</button>
+  </div>
+</div>
+
+<script>
+"use strict";
+/* ============================================================
+   NOVA ORBS — single-file prototype
+   Economie: zero-sum + 5% sink. Massa != Coins.
+   - bank  : veilig saldo (localStorage)
+   - wager : escrow bij start (bank -= wager)
+   - purse : coins op tafel (wager + gestolen beurzen)
+   - cashout: bank += purse * 0.95 | dood: escrow weg
+   ============================================================ */
+const CFG = {
+  WORLD: 5500, FOOD_TARGET: 1000, BOT_COUNT: 40,
+  EAT: 1.15, CASHOUT: 10, RAKE: 0.05,
+  START_MASS: 430, FOOD_MASS_MIN: 9, FOOD_MASS_MAX: 20,
+  MAX_R: 235,
+};
+const $ = id => document.getElementById(id);
+const fmt = n => Math.round(n).toLocaleString('nl-NL');
+const clamp = (v,a,b)=>Math.max(a,Math.min(b,v));
+const massToR = m => clamp(Math.sqrt(m), 4, CFG.MAX_R);
+const rand = (a,b)=>a+Math.random()*(b-a);
+
+let bank = parseInt(localStorage.getItem('nova_bank')||'1000',10);
+if(!Number.isFinite(bank)) bank = 1000;
+let wager = 100;
+const playMode = 'net'; // multiplayer-only: alles draait op de echte server
+const DEFAULT_SRV = 'wss://braelynn-pseudoreformatory-niko.ngrok-free.dev'; // vaste ngrok-URL, vooraf ingevuld
+// Wordt het spel via een server-adres geopend? Gebruik dan automatisch die server.
+const AUTO_SRV = (location.protocol.indexOf('http')===0) ? location.protocol.replace('http','ws')+'//'+location.host : null;
+let srvDirty = false; // true zodra de speler zelf een URL typt
+let netUser = localStorage.getItem('nova_user')||'';
+let netPass = localStorage.getItem('nova_pass')||''; // prototype: wachtwoord onthouden voor auto-login
+
+const canvas=$('game'), ctx=canvas.getContext('2d');
+const mini=$('mini'), mctx=mini.getContext('2d');
+let DPR=1;
+function resize(){ DPR=Math.min(2,window.devicePixelRatio||1); canvas.width=innerWidth*DPR; canvas.height=innerHeight*DPR; canvas.style.width=innerWidth+'px'; canvas.style.height=innerHeight+'px'; }
+addEventListener('resize',resize); resize();
+
+const mouse={x:innerWidth/2,y:innerHeight/2};
+addEventListener('mousemove',e=>{mouse.x=e.clientX;mouse.y=e.clientY;});
+addEventListener('touchmove',e=>{const t=e.touches[0];if(t){mouse.x=t.clientX;mouse.y=t.clientY;}},{passive:true});
+addEventListener('touchstart',e=>{const t=e.touches[0];if(t){mouse.x=t.clientX;mouse.y=t.clientY;}},{passive:true});
+
+/* ---------- audio (tiny synth, geen assets) ---------- */
+let AC=null;
+function beep(f=440,d=.08,type='sine',g=.12){ try{ AC=AC||new (window.AudioContext||window.webkitAudioContext)(); const o=AC.createOscillator(),v=AC.createGain(); o.type=type;o.frequency.value=f; v.gain.value=g; o.connect(v);v.connect(AC.destination); o.start(); v.gain.exponentialRampToValueAtTime(.0001,AC.currentTime+d); o.stop(AC.currentTime+d);}catch(e){} }
+
+/* ---------- game state (multiplayer-only: simulatie draait op de server) ---------- */
+let S=null;
+
+function newCell(x,y,mass,name,color){
+  return {x,y,mass,r:massToR(mass),vx:0,vy:0,alive:true,name,color,
+    purse:0,kills:0,tx:x,ty:y,nextThink:0,mode:'graze',modeUntil:0,
+    type:'smart',skill:0.8,err:0.15,wander:{x:rand(300,CFG.WORLD-300),y:rand(300,CFG.WORLD-300)}};
+}
+
+function save(){ localStorage.setItem('nova_bank',String(bank)); }
+
+/* ---------- simulatie (bots, eten, kills) draait op de server ---------- */
+
+/* ---------- cashout-vlag (10s-timer loopt authoritatief op de server) ---------- */
+function cashoutValueFor(h){ return Math.floor(h.purse*(1-CFG.RAKE)); }
+function startCharge(){
+  if(!S||S.mode!=='playing'||S.over) return;
+  const h=S.player;
+  if(!h||!h.alive) return;
+  S.charging=true;
+  $('cashBtn').classList.add('charging');
+  beep(520,.08,'sine',.1);
+}
+function stopCharge(silent){
+  if(!S) return;
+  if(S.charging&&!silent&&S.mode==='playing') feed('Cashout geannuleerd.','');
+  S.charging=false;
+  $('cashBtn').classList.remove('charging');
+  $('cashArc').style.strokeDashoffset=364.4;
+}
+
+/* ---------- UI helpers ---------- */
+function esc(s){ return String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+function feed(html,cls){ const f=$('feed'),el=document.createElement('div'); el.className='feed '+cls; el.innerHTML=html; f.prepend(el); while(f.children.length>6) f.lastChild.remove(); setTimeout(()=>el.remove(),5000); }
+function pop(text,color){ const t=$('toast'),el=document.createElement('div'); el.className='pop'; el.style.color=color||'#fff'; el.textContent=text; t.appendChild(el); setTimeout(()=>el.remove(),1700); }
+function refreshMenu(){
+  wager=clamp(Math.round(Number(wager)||10),10,Math.max(10,bank));
+  $('menuBal').textContent=fmt(bank);
+  $('shopBal').textContent=fmt(bank);
+  $('wAmt').textContent=fmt(wager);
+  $('srvUrl').value = srvDirty ? $('srvUrl').value : (AUTO_SRV||localStorage.getItem('nova_srv')||DEFAULT_SRV);
+  document.querySelectorAll('#presets button').forEach(b=>b.classList.toggle('on',b.dataset.p!=='max'&&parseInt(b.dataset.p,10)===wager));
+  $('loginBtn').textContent=netUser||'login';
+}
+
+/* ---------- HUD / board / minimap ---------- */
+function camFocus(){
+  const alive=S.humans.filter(h=>h.alive&&!h.done);
+  const f=alive.length?alive:[S.player];
+  const x=f.reduce((s,c)=>s+c.x,0)/f.length, y=f.reduce((s,c)=>s+c.y,0)/f.length;
+  const r=Math.max(...f.map(c=>c.r));
+  return {x,y,r};
+}
+function updateHUD(){
+  const P=S.player;
+  $('hMass').textContent=fmt(P.mass);
+  $('hKills').textContent=S.humans.reduce((s,h)=>s+h.kills,0);
+  const botsAlive=S.bots.filter(b=>b.alive).length;
+  const remAlive=S.remotes.filter(r=>r.alive).length;
+  const humAlive=S.humans.filter(h=>h.alive&&!h.done).length;
+  $('hAlive').textContent=(botsAlive+humAlive+remAlive)+' / '+S.botTarget;
+  $('hBank').textContent=fmt(bank);
+  $('hPurse').textContent=fmt(P.purse);
+  $('hNet').textContent=fmt(cashoutValueFor(P));
+  $('cashAmt').textContent=fmt(cashoutValueFor(P))+' 🪙';
+  const all=[...S.humans.filter(h=>!h.done),...S.bots,...S.remotes].filter(c=>c.alive).sort((a,b)=>b.mass-a.mass).slice(0,8);
+  $('boardList').innerHTML=all.map((c,i)=>{
+    const me=c.isPlayer?'me':(c.remote?'me':'');
+    const icon=c.remote?'🌐 ':''; const nm=c.name;
+    return '<li class="'+me+'"><span>'+(i===0?'<span class="crown">👑 </span>':'')+icon+esc(nm)+'</span><span>'+fmt(c.mass)+'</span></li>';
+  }).join('');
+  // minimap
+  mctx.clearRect(0,0,150,150); mctx.fillStyle='rgba(10,15,35,.9)'; mctx.fillRect(0,0,150,150);
+  const k=150/CFG.WORLD;
+  for(const f of S.foods){ mctx.fillStyle=f.color; mctx.fillRect(f.x*k,f.y*k,1.6,1.6); }
+  for(const b of S.bots){ if(!b.alive)continue; mctx.fillStyle=b===all[0]?'#ffd84d':'#5aa8ff'; mctx.beginPath(); mctx.arc(b.x*k,b.y*k,Math.max(1.5,b.r*k),0,7); mctx.fill(); }
+  for(const r of S.remotes){ if(!r.alive)continue; mctx.fillStyle='#6ee7ff'; mctx.beginPath(); mctx.arc(r.x*k,r.y*k,Math.max(1.8,r.r*k),0,7); mctx.fill(); }
+  for(const h of S.humans){ if(!h.alive||h.done)continue; mctx.fillStyle=h.isP2?'#ff8ab2':'#5ef2b8'; mctx.beginPath(); mctx.arc(h.x*k,h.y*k,Math.max(2,h.r*k),0,7); mctx.fill(); mctx.strokeStyle='#fff'; mctx.stroke(); }
+}
+
+/* ---------- render ---------- */
+function draw(){
+  const cam=camFocus();
+  ctx.setTransform(DPR,0,0,DPR,0,0);
+  // achtergrond + vignette grid
+  const g=ctx.createRadialGradient(innerWidth/2,innerHeight/2,100,innerWidth/2,innerHeight/2,Math.max(innerWidth,innerHeight)*.75);
+  g.addColorStop(0,'#0c1230'); g.addColorStop(1,'#05070f');
+  ctx.fillStyle=g; ctx.fillRect(0,0,innerWidth,innerHeight);
+  const zoom=clamp(760/(cam.r*2.4),0.30,1.5);
+  ctx.save(); ctx.translate(innerWidth/2,innerHeight/2); ctx.scale(zoom,zoom); ctx.translate(-cam.x,-cam.y);
+  // grid
+  ctx.strokeStyle='rgba(255,255,255,.055)'; ctx.lineWidth=1/zoom;
+  const gs=160,vw=innerWidth/zoom,vh=innerHeight/zoom;
+  const x0=Math.floor((cam.x-vw/2)/gs)*gs,y0=Math.floor((cam.y-vh/2)/gs)*gs;
+  ctx.beginPath();
+  for(let x=x0;x<=cam.x+vw/2+gs;x+=gs){ctx.moveTo(x,y0);ctx.lineTo(x,y0+vh+2*gs);}
+  for(let y=y0;y<=cam.y+vh/2+gs;y+=gs){ctx.moveTo(x0,y);ctx.lineTo(x0+vw+2*gs,y);}
+  ctx.stroke();
+  // arena rand
+  ctx.strokeStyle='rgba(94,242,184,.55)'; ctx.lineWidth=10; ctx.strokeRect(8,8,CFG.WORLD-16,CFG.WORLD-16);
+  ctx.strokeStyle='rgba(255,216,77,.25)'; ctx.lineWidth=26; ctx.strokeRect(-8,-8,CFG.WORLD+16,CFG.WORLD+16);
+  // voer
+  const vx0=cam.x-vw/2-60,vx1=cam.x+vw/2+60,vy0=cam.y-vh/2-60,vy1=cam.y+vh/2+60;
+  for(const f of S.foods){ if(f.x<vx0||f.x>vx1||f.y<vy0||f.y>vy1) continue;
+    if(!f.r) f.r=massToR(f.mass);
+    ctx.fillStyle=f.color; ctx.globalAlpha=.9; ctx.beginPath(); ctx.arc(f.x,f.y,f.r,0,7); ctx.fill(); ctx.globalAlpha=1; }
+  for(const b of S.bots) if(b.alive) drawCell(b,false);
+  for(const r of S.remotes) if(r.alive) drawCell(r,false);
+  for(const h of S.humans) if(h.alive&&!h.done) drawCell(h,true);
+  ctx.restore();
+  // crosshair
+  ctx.fillStyle='rgba(255,255,255,.85)'; ctx.beginPath(); ctx.arc(mouse.x,mouse.y,5,0,7); ctx.fill();
+  ctx.strokeStyle='rgba(255,255,255,.3)'; ctx.beginPath(); ctx.arc(mouse.x,mouse.y,12,0,7); ctx.stroke();
+}
+function drawCell(c,isMe){
+  const charging=S&&isMe&&S.charging;
+  const glow=S&&(S.bots.length+S.remotes.length)<45; // glow uit bij drukte = meer fps
+  ctx.fillStyle=c.color; ctx.shadowColor=c.color; ctx.shadowBlur=glow?(charging?40:20):0;
+  ctx.beginPath(); ctx.arc(c.x,c.y,c.r,0,7); ctx.fill(); ctx.shadowBlur=0;
+  // glans
+  ctx.fillStyle='rgba(255,255,255,.16)'; ctx.beginPath(); ctx.arc(c.x-c.r*.32,c.y-c.r*.34,c.r*.46,0,7); ctx.fill();
+  // binnenkern
+  ctx.fillStyle='rgba(0,0,0,.14)'; ctx.beginPath(); ctx.arc(c.x,c.y,c.r*.72,0,7); ctx.fill();
+  if(isMe){ ctx.strokeStyle=charging?'#ffd84d':'#fff'; ctx.lineWidth=Math.max(2,c.r*.06); ctx.beginPath(); ctx.arc(c.x,c.y,c.r,0,7); ctx.stroke();
+    if(charging){ ctx.strokeStyle='rgba(255,216,77,.8)'; ctx.setLineDash([10,8]); ctx.lineWidth=3; ctx.beginPath(); ctx.arc(c.x,c.y,c.r+12,0,7); ctx.stroke(); ctx.setLineDash([]); } }
+  // label
+  const fs=clamp(c.r*.42,12,30);
+  ctx.fillStyle='#fff'; ctx.font='800 '+fs+'px Inter,Segoe UI'; ctx.textAlign='center';
+  const tag=c.isPlayer?'':(c.kills>0?' · '+c.kills+'☠':'');
+  ctx.fillText(c.name,c.x,c.y-c.r-fs*.5);
+  ctx.font='700 '+Math.max(11,fs*.72)+'px Inter,Segoe UI'; ctx.fillStyle=isMe?'#ffd84d':'rgba(255,255,255,.85)';
+  ctx.fillText(fmt(c.mass)+(c.isPlayer?' massa · '+fmt(c.purse)+' 🪙':' · '+fmt(c.purse)+' 🪙')+tag,c.x,c.y-c.r+Math.max(11,fs*.72)+2);
+}
+
+/* ---------- echte server (WebSocket, authoritatief) ---------- */
+const Srv = {
+  ws:null, lastInput:0, lastPing:0, ms:null,
+  start(url){
+    wager=clamp(Math.round(Number(wager)||10),10,100000);
+    // bank loopt via je server-account (of gast-saldo) — geen lokale afschrijving
+    localStorage.setItem('nova_srv',url);
+    S={mode:'connecting',playMode:'net',player:null,humans:[],bots:[],remotes:[],botTarget:40,
+      foods:[],kills:0,t0:performance.now(),maxMass:CFG.START_MASS,
+      charging:false,over:false,last:performance.now(),netEnded:false};
+    $('menu').classList.add('hidden'); $('result').classList.add('hidden');
+    $('cashWrap').style.display='flex';
+    $('hMode').textContent='SERVER';
+    feed('🛰️ Verbinden met <b>'+esc(url)+'</b>…','gold');
+    let ws;
+    try{ ws=new WebSocket(url); }catch(e){ toast('Ongeldige server-URL'); backToLobby(true); return; }
+    this.ws=ws;
+    ws.onopen=()=>{ try{ ws.send(JSON.stringify({t:'join',wager,user:netUser,pass:netPass,mode:'login'})); }catch(e){} };
+    ws.onmessage=(e)=>{ let m; try{ m=JSON.parse(e.data); }catch(err){ return; } this.onMsg(m); };
+    ws.onerror=()=>{ if(S&&S.playMode==='net'&&S.mode==='connecting'){ toast('Server niet bereikbaar — check URL / hosting'); backToLobby(true); } };
+    ws.onclose=()=>{
+      this.ws=null;
+      if(S&&S.playMode==='net'&&S.mode==='playing'&&!S.netEnded){
+        toast('Verbinding met server verbroken');
+        backToLobby(true);
+      }
+    };
+  },
+  onMsg(m){
+    if(!S||S.playMode!=='net') return;
+    if(m.t==='welcome'){ S.mode='playing'; S.last=performance.now();
+      if(typeof m.bank==='number'){ bank=Math.round(m.bank); save(); } // server-bank is leidend
+      if(m.wager){ wager=m.wager; refreshMenu();
+        feed('Server-inzet: <b>'+fmt(wager)+'</b> 🪙 (tafel — eerste speler bepaalt) · saldo <b>'+fmt(bank)+'</b> 🪙','gold'); }
+      feed('🛰️ Verbonden'+(netUser?' als <b>'+esc(netUser)+'</b>':' als gast')+' · arena vult met bots + spelers','gold');
+      feed('Cash met knop, touchscreen-hold of <kbd>Q</kbd> (10s vasthouden).','');
+      netLoop();
+    }
+    else if(m.t==='state'){ applyNetState(m); }
+    else if(m.t==='feed'){ feed(m.html,m.cls||''); }
+    else if(m.t==='end'){ onNetEnd(m); }
+    else if(m.t==='pong'){ Srv.ms=Math.max(0,Math.round(performance.now()-m.t)); $('hMode').textContent='SERVER · '+Srv.ms+'ms'; }
+  },
+  sendInput(wx,wy,c){
+    if(!this.ws||this.ws.readyState!==1) return;
+    const now=performance.now();
+    if(now-this.lastInput<50) return;
+    this.lastInput=now;
+    try{ this.ws.send(JSON.stringify({t:'input',x:Math.round(wx),y:Math.round(wy),c:c?1:0})); }catch(e){}
+  }
+};
+function startNetMatch(){
+  const url=srvActiveUrl();
+  if(!url){ toast('Vul eerst een server-URL in'); $('srvUrl').focus(); return; }
+  Srv.start(url);
+}
+function applyNetState(m){
+  const y=m.you;
+  if(y&&!S.player){
+    const c=newCell(y.x,y.y,y.mass,'JIJ','#5ef2b8');
+    c.isPlayer=true; S.player=c; S.humans=[c];
+  }
+  if(y&&S.player){
+    const P=S.player;
+    P.x=y.x;P.y=y.y;P.mass=y.mass;P.r=massToR(y.mass);P.vx=y.vx||0;P.vy=y.vy||0;
+    P.purse=y.purse;P.kills=y.kills;P.alive=y.alive;P.ce=y.ce||0;
+    S.kills=P.kills; S.maxMass=Math.max(S.maxMass,P.mass);
+  }
+  S.bots=(m.bots||[]).map(b=>({x:b.x,y:b.y,mass:b.mass,r:massToR(b.mass),vx:b.vx||0,vy:b.vy||0,alive:true,
+    name:b.n,color:b.c,purse:b.p,kills:b.k||0,type:'smart',skill:.8,err:.15,tx:0,ty:0,nextThink:0,mode:'hunt',modeUntil:0,wander:{x:0,y:0}}));
+  S.remotes=(m.players||[]).map(p=>{const c=newCell(p.x,p.y,p.mass,p.n,p.c||'#6ee7ff');c.remote=true;c.purse=p.p||0;c.kills=p.k||0;c.r=massToR(p.mass);c.vx=p.vx||0;c.vy=p.vy||0;c.alive=true;return c;});
+  if(m.foods) S.foods=(m.foods||[]).map(f=>({x:f.x,y:f.y,mass:f.m,r:massToR(f.m),color:f.c})); // voer komt om de beurt binnen
+  S.botTarget=m.target||40;
+  S.snapT=performance.now();
+}
+function netLoop(){
+  if(!S||S.playMode!=='net'||S.mode!=='playing') return;
+  const now=performance.now();
+  const dt=Math.min(.05,(now-S.last)/1000); S.last=now; void dt;
+  const P=S.player;
+  if(!P||!P.alive){ requestAnimationFrame(netLoop); return; } // wacht op eerste snapshot
+  {
+    const wx=P.x+(mouse.x-innerWidth/2)*(P.r/320+0.55);
+    const wy=P.y+(mouse.y-innerHeight/2)*(P.r/320+0.55);
+    Srv.sendInput(wx,wy,S.charging);
+    if(now-Srv.lastPing>2000){ Srv.lastPing=now; try{ Srv.ws&&Srv.ws.readyState===1&&Srv.ws.send(JSON.stringify({t:'ping',t:now})); }catch(e){} }
+    // dead reckoning: beweeg bots/spelers door op hun snelheid → vloeiend tussen snapshots
+    const dtS=Math.min(.25,(now-(S.snapT||now))/1000);
+    S.snapT=now;
+    for(const b of S.bots){ b.x+=b.vx*dtS; b.y+=b.vy*dtS; }
+    for(const r of S.remotes){ r.x+=r.vx*dtS; r.y+=r.vy*dtS; }
+    // cashout-ring volgt de server-timer (authoritatief)
+    if(S.charging){
+      const pct=clamp((P.ce||0)/CFG.CASHOUT,0,1);
+      $('cashArc').style.strokeDashoffset=String(364.4*(1-pct));
+      $('cashTmr').textContent='CASHING OUT… '+Math.max(0,CFG.CASHOUT-(P.ce||0)).toFixed(1)+'s';
+    } else $('cashTmr').textContent='HOLD 10s / Q';
+  }
+  updateHUD(); draw();
+  requestAnimationFrame(netLoop);
+}
+function onNetEnd(m){
+  if(!S||S.playMode!=='net') return;
+  S.mode='over'; S.over=true; S.netEnded=true; S.charging=false;
+  try{ Srv.ws&&Srv.ws.close(); }catch(e){} Srv.ws=null;
+  $('cashWrap').style.display='none'; $('cashBtn').classList.remove('charging');
+  const secs=Math.round((performance.now()-S.t0)/1000);
+  let title,num,cls,line;
+  if(typeof m.bank==='number'){ bank=Math.round(m.bank); save(); } // server-bank is leidend
+  if(m.kind==='authfail'){ toast(m.reason||'Login mislukt'); backToLobby(true); return; }
+  if(m.kind==='cash'){ title='✅ Veilig uitgecashed!'; num='+'+fmt(m.amount); cls='win';
+    line='De server bankte '+fmt(m.amount)+' 🪙 (incl. 5% fee). Inzet was '+fmt(wager)+' · kills '+m.kills+' · massa '+fmt(m.mass)+'.'; }
+  else if(m.kind==='full'){ title='🌐 Server vol'; num='±0'; cls='win'; line='De arena zit vol (max 12 spelers). Er is niks afgeschreven — probeer het zo opnieuw.'; }
+  else { title='💥 '+esc(m.killer||'—')+' at jou op!'; num='−'+fmt(wager); cls='lose';
+    line='Je verloor je inzet van '+fmt(wager)+' 🪙 (beurs was '+fmt(m.purse||0)+'). Kills: '+m.kills+'.'; }
+  beep(m.kind==='cash'?880:160,m.kind==='cash'?.15:.4,m.kind==='cash'?'sine':'sawtooth',.12);
+  $('rTitle').textContent=title; $('rNum').textContent=num; $('rNum').style.color=cls==='win'?'#5ef2b8':'#ff5a6e'; $('rLine').textContent=line;
+  $('rKills').textContent=m.kills||0; $('rMass').textContent=fmt(m.mass||0); $('rTime').textContent=secs+'s'; $('rBank').textContent=fmt(bank);
+  $('result').classList.remove('hidden');
+  refreshMenu();
+}
+function backToLobby(silent){
+  if(S){ S.mode='over'; S.over=true; }
+  try{ Srv.ws&&Srv.ws.close(); }catch(e){} Srv.ws=null;
+  $('cashWrap').style.display='none';
+  $('result').classList.add('hidden'); $('menu').classList.remove('hidden');
+  if(!silent) feed('Terug in de lobby.','');
+  refreshMenu();
+}
+
+/* ---------- wiring ---------- */
+function syncWager(v){ wager=clamp(Math.round(Number(v)||10),10,Math.max(10,bank)); refreshMenu(); }
+$('wMinus').onclick=()=>syncWager(wager-(wager>=200?50:10));
+$('wPlus').onclick=()=>syncWager(wager+(wager>=200?50:10));
+document.querySelectorAll('#presets button').forEach(b=>b.onclick=()=>{
+  if(b.dataset.p==='max'){ if(bank<10){ toast('Geen saldo voor MAX'); return; } syncWager(bank); }
+  else syncWager(parseInt(b.dataset.p,10));
+});
+$('srvReset').onclick=()=>{ srvDirty=false; localStorage.setItem('nova_srv',DEFAULT_SRV); $('srvUrl').value=AUTO_SRV||DEFAULT_SRV; toast('Server-URL gereset'); };
+$('srvUrl').addEventListener('input',()=>{ srvDirty=true; });
+$('startBtn').onclick=()=>{ try{AC=AC||new (window.AudioContext||window.webkitAudioContext)();}catch(e){} startNetMatch(); };
+$('againBtn').onclick=()=>{ $('result').classList.add('hidden'); $('menu').classList.remove('hidden'); refreshMenu(); };
+/* modals */
+let authModalMode='login';
+const openModal=id=>$(id).classList.remove('hidden');
+const closeModal=id=>$(id).classList.add('hidden');
+$('loginBtn').onclick=()=>{ authModalMode='login'; $('authTitle').textContent='login'; $('authMsg').textContent=''; $('authUser').value=netUser||''; openModal('authModal'); };
+$('signinBtn').onclick=()=>{ authModalMode='register'; $('authTitle').textContent='signin'; $('authMsg').textContent=''; $('authUser').value=netUser||''; openModal('authModal'); };
+$('authClose').onclick=()=>closeModal('authModal');
+$('shopBtn').onclick=()=>{ $('shopMsg').textContent='gratis coins · max 1× per 5 min · prototype, geen echt geld'; refreshMenu(); openModal('shopModal'); };
+$('shopClose').onclick=()=>closeModal('shopModal');
+$('helpBtn').onclick=()=>openModal('helpModal');
+$('helpClose').onclick=()=>closeModal('helpModal');
+function srvActiveUrl(){
+  const typed=(($('srvUrl')&&$('srvUrl').value)||'').trim();
+  if(srvDirty&&typed) return typed;      // zelf getypt gaat voor
+  if(AUTO_SRV) return AUTO_SRV;          // via server-adres geopend → die server
+  return (typed||localStorage.getItem('nova_srv')||DEFAULT_SRV).trim();
+}
+function srvOnce(msg,cb){
+  const url=srvActiveUrl();
+  let ws; try{ ws=new WebSocket(url); }catch(e){ toast('Ongeldige server-URL'); return; }
+  const to=setTimeout(()=>{ try{ws.close();}catch(e){} toast('Server reageert niet'); },9000);
+  ws.onopen=()=>{ try{ ws.send(JSON.stringify(msg)); }catch(e){} };
+  ws.onmessage=e=>{ let m; try{ m=JSON.parse(e.data); }catch(err){ return; }
+    if(m.t==='auth'){ clearTimeout(to); try{ws.close();}catch(ex){} cb(m); } };
+  ws.onerror=()=>{ clearTimeout(to); toast('Server niet bereikbaar'); };
+}
+$('authGo').onclick=()=>{
+  const u=($('authUser').value||'').trim(), p=$('authPass').value||'';
+  if(!/^[A-Za-z0-9_.-]{3,16}$/.test(u)){ $('authMsg').textContent='naam: 3-16 tekens'; return; }
+  if(p.length<4){ $('authMsg').textContent='wachtwoord min 4 tekens'; return; }
+  $('authMsg').textContent='…';
+  srvOnce({t:'auth',user:u,pass:p,mode:authModalMode},m=>{
+    if(m.ok){ netUser=u; netPass=p; localStorage.setItem('nova_user',u); localStorage.setItem('nova_pass',p);
+      bank=Math.round(m.bank); save(); refreshMenu(); closeModal('authModal'); toast(authModalMode==='register'?'Account gemaakt: '+u:'Ingelogd als '+u); }
+    else $('authMsg').textContent=m.reason||'mislukt';
+  });
+};
+$('claimBtn').onclick=()=>{
+  if(!netUser||!netPass){ $('shopMsg').textContent='login eerst via het menu'; return; }
+  $('shopMsg').textContent='…';
+  srvOnce({t:'claim',user:netUser,pass:netPass},m=>{
+    if(m.ok){ bank=Math.round(m.bank); save(); refreshMenu(); $('shopMsg').textContent='+500 bijgeschreven! saldo $:'+fmt(bank); }
+    else $('shopMsg').textContent=m.reason||'mislukt';
+  });
+};
+const cb=$('cashBtn');
+cb.addEventListener('pointerdown',e=>{e.preventDefault();cb.setPointerCapture&&cb.setPointerCapture(e.pointerId);startCharge();});
+['pointerup','pointercancel'].forEach(ev=>cb.addEventListener(ev,e=>{ if(S&&S.charging&&S.mode==='playing') stopCharge(false); }));
+cb.addEventListener('contextmenu',e=>e.preventDefault());
+addEventListener('keydown',e=>{
+  const tag=(e.target&&e.target.tagName)||'';
+  if(tag==='INPUT'||tag==='SELECT'||tag==='TEXTAREA') return; // niet cashen tijdens typen
+  const k=e.key.toLowerCase();
+  if((k==='q'||k==='c')&&!e.repeat) startCharge(); // Q = cash op pc (C blijft als alias)
+});
+addEventListener('keyup',e=>{
+  const k=e.key.toLowerCase();
+  if(k==='q'||k==='c'){ if(S&&S.charging&&S.mode==='playing') stopCharge(false); }
+});
+
+refreshMenu();
+</script>
+</body>
+</html>
