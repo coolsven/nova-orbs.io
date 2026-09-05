@@ -572,8 +572,9 @@ function applyNetBin(ab){
     for(const b of bcells){
       const mt=look(b[0]);
       let c=S.botPool.get(b[0]);
-      if(!c){ c=newCell(b[1],b[2],b[3],mt.n,mt.c); S.botPool.set(b[0],c); }
-      c.x=b[1];c.y=b[2];c.mass=b[3];c.r=massToR(b[3]);c.vx=b[4]||0;c.vy=b[5]||0;c.alive=true;
+      if(!c){ c=newCell(b[1],b[2],b[3],mt.n,mt.c); c.ox=b[1];c.oy=b[2];c.tx=b[1];c.ty=b[2]; S.botPool.set(b[0],c); }
+      else { c.ox=c.tx; c.oy=c.ty; c.tx=b[1]; c.ty=b[2]; }
+      c.mass=b[3];c.r=massToR(b[3]);c.vx=b[4]||0;c.vy=b[5]||0;c.alive=true;
       c.name=mt.n;c.color=mt.c;c.purse=b[6];c.kills=b[7]||0;
       S.bots.push(c); aliveB.add(b[0]);
     }
@@ -583,15 +584,16 @@ function applyNetBin(ab){
     for(const p of pcells){
       const mt=look(p[0]);
       let c=S.remPool.get(p[0]);
-      if(!c){ c=newCell(p[1],p[2],p[3],mt.n,mt.c); c.remote=true; S.remPool.set(p[0],c); }
-      c.x=p[1];c.y=p[2];c.mass=p[3];c.r=massToR(p[3]);c.vx=p[4]||0;c.vy=p[5]||0;c.alive=true;
+      if(!c){ c=newCell(p[1],p[2],p[3],mt.n,mt.c); c.remote=true; c.ox=p[1];c.oy=p[2];c.tx=p[1];c.ty=p[2]; S.remPool.set(p[0],c); }
+      else { c.ox=c.tx; c.oy=c.ty; c.tx=p[1]; c.ty=p[2]; }
+      c.mass=p[3];c.r=massToR(p[3]);c.vx=p[4]||0;c.vy=p[5]||0;c.alive=true;
       c.name=mt.n;c.color=mt.c;c.purse=p[6]||0;c.kills=p[7]||0;
       S.remotes.push(c); aliveR.add(p[0]);
     }
     for(const k of S.remPool.keys()) if(!aliveR.has(k)) S.remPool.delete(k);
     if(farr) S.foods=farr.map(f=>({x:f[0],y:f[1],mass:f[2],r:massToR(f[2]),color:FOODPAL[Math.abs(f[0]*7+f[1]*13)%FOODPAL.length]}));
     S.botTarget=40;
-    S.snapT=performance.now();
+    S.snapA=S.snapB||performance.now(); S.snapB=performance.now(); S.snapT=S.snapB;
   }catch(e){ /* kapotte snapshot overslaan */ }
 }
 function netLoop(){
@@ -605,12 +607,14 @@ function netLoop(){
     const wy=P.y+(mouse.y-innerHeight/2)*(P.r/320+0.55);
     Srv.sendInput(wx,wy,S.charging);
     if(now-Srv.lastPing>2000){ Srv.lastPing=now; try{ Srv.ws&&Srv.ws.readyState===1&&Srv.ws.send(JSON.stringify({t:'ping',t:now})); }catch(e){} }
-    // dead reckoning: alles (ook jezelf!) doorbewegen op snelheid → directe feel tussen snapshots
+    // eigen cel voorspellen (directe feel); anderen interpoleren met ~100ms vertraging (boterzacht, geen jitter)
     const dtS=Math.min(.25,(now-(S.snapT||now))/1000);
     S.snapT=now;
     P.x+=P.vx*dtS; P.y+=P.vy*dtS;
-    for(const b of S.bots){ b.x+=b.vx*dtS; b.y+=b.vy*dtS; }
-    for(const r of S.remotes){ r.x+=r.vx*dtS; r.y+=r.vy*dtS; }
+    const seg=Math.max(1,(S.snapB||now)-(S.snapA||now));
+    const al=clamp((now-100-(S.snapA||now))/seg,0,1);
+    for(const b of S.bots){ b.x=b.ox+(b.tx-b.ox)*al; b.y=b.oy+(b.ty-b.oy)*al; }
+    for(const r of S.remotes){ r.x=r.ox+(r.tx-r.ox)*al; r.y=r.oy+(r.ty-r.oy)*al; }
     // cashout-ring volgt de server-timer (authoritatief)
     if(S.charging){
       const pct=clamp((P.ce||0)/CFG.CASHOUT,0,1);
