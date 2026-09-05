@@ -293,6 +293,7 @@ let AC=null;
 function beep(f=440,d=.08,type='sine',g=.12){ try{ AC=AC||new (window.AudioContext||window.webkitAudioContext)(); const o=AC.createOscillator(),v=AC.createGain(); o.type=type;o.frequency.value=f; v.gain.value=g; o.connect(v);v.connect(AC.destination); o.start(); v.gain.exponentialRampToValueAtTime(.0001,AC.currentTime+d); o.stop(AC.currentTime+d);}catch(e){} }
 
 /* ---------- game state (multiplayer-only: simulatie draait op de server) ---------- */
+const FOODPAL=['#5ef2b8','#5aa8ff','#c792ff','#ffd84d','#ff8ab2','#6ee7ff','#9df06e'];
 let S=null;
 
 function newCell(x,y,mass,name,color){
@@ -433,7 +434,7 @@ const Srv = {
     wager=clamp(Math.round(Number(wager)||10),10,100000);
     // bank loopt via je server-account (of gast-saldo) — geen lokale afschrijving
     localStorage.setItem('nova_srv',url);
-    S={mode:'connecting',playMode:'net',player:null,humans:[],bots:[],remotes:[],botTarget:40,
+    S={mode:'connecting',playMode:'net',player:null,humans:[],bots:[],remotes:[],botTarget:40,meta:{},
       foods:[],kills:0,t0:performance.now(),maxMass:CFG.START_MASS,
       charging:false,over:false,last:performance.now(),netEnded:false};
     $('menu').classList.add('hidden'); $('result').classList.add('hidden');
@@ -494,10 +495,13 @@ function applyNetState(m){
     P.purse=y.purse;P.kills=y.kills;P.alive=y.alive;P.ce=y.ce||0;
     S.kills=P.kills; S.maxMass=Math.max(S.maxMass,P.mass);
   }
-  S.bots=(m.bots||[]).map(b=>({x:b.x,y:b.y,mass:b.mass,r:massToR(b.mass),vx:b.vx||0,vy:b.vy||0,alive:true,
-    name:b.n,color:b.c,purse:b.p,kills:b.k||0,type:'smart',skill:.8,err:.15,tx:0,ty:0,nextThink:0,mode:'hunt',modeUntil:0,wander:{x:0,y:0}}));
-  S.remotes=(m.players||[]).map(p=>{const c=newCell(p.x,p.y,p.mass,p.n,p.c||'#6ee7ff');c.remote=true;c.purse=p.p||0;c.kills=p.k||0;c.r=massToR(p.mass);c.vx=p.vx||0;c.vy=p.vy||0;c.alive=true;return c;});
-  if(m.foods) S.foods=(m.foods||[]).map(f=>({x:f.x,y:f.y,mass:f.m,r:massToR(f.m),color:f.c})); // voer komt om de beurt binnen
+  for(const e of (m.meta||[])) S.meta[e[0]]={n:e[1],c:e[2]}; // namen/kleuren 1× cachen
+  const look=id=>S.meta[id]||{n:'…',c:'#5aa8ff'};
+  // cel = [id,x,y,massa,vx,vy,beurs,kills]
+  S.bots=(m.bots||[]).map(b=>{const mt=look(b[0]);return{x:b[1],y:b[2],mass:b[3],r:massToR(b[3]),vx:b[4]||0,vy:b[5]||0,alive:true,
+    name:mt.n,color:mt.c,purse:b[6],kills:b[7]||0};});
+  S.remotes=(m.players||[]).map(p=>{const mt=look(p[0]);const c=newCell(p[1],p[2],p[3],mt.n,mt.c);c.remote=true;c.purse=p[6]||0;c.kills=p[7]||0;c.r=massToR(p[3]);c.vx=p[4]||0;c.vy=p[5]||0;c.alive=true;return c;});
+  if(m.foods) S.foods=m.foods.map(f=>({x:f[0],y:f[1],mass:f[2],r:massToR(f[2]),color:FOODPAL[Math.abs(f[0]*7+f[1]*13)%FOODPAL.length]})); // voer komt om de beurt binnen
   S.botTarget=m.target||40;
   S.snapT=performance.now();
 }
@@ -524,7 +528,8 @@ function netLoop(){
       $('cashTmr').textContent='CASHING OUT… '+Math.max(0,CFG.CASHOUT-(P.ce||0)).toFixed(1)+'s';
     } else $('cashTmr').textContent='HOLD 10s / Q';
   }
-  updateHUD(); draw();
+  if(now-(S.hudT||0)>150){ S.hudT=now; updateHUD(); } // HUD 7×/s is zat (scheelt DOM-werk)
+  draw();
   requestAnimationFrame(netLoop);
 }
 function onNetEnd(m){

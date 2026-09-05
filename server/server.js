@@ -16,7 +16,7 @@ const { WebSocketServer } = require("ws");
 const PORT = process.env.PORT || 3000;
 const WORLD = 5500, EAT = 1.15, CASHOUT = 10, RAKE = 0.05;
 const START_MASS = 430, MAX_R = 235, FOOD_TARGET = 1000, ARENA_SIZE = 40;
-const MAX_PLAYERS = 12, TICK_MS = 50, SNAP_MS = Math.round(1000 / (Number(process.env.SNAP_HZ) || 10)); // hoger = smoother (10 = zuinig, 20 = boterzacht op snelle verbinding)
+const MAX_PLAYERS = 12, TICK_MS = 50, SNAP_MS = Math.round(1000 / (Number(process.env.SNAP_HZ) || 15)); // hoger = smoother (10 = zuinig, 15 = standaard, 20 = boterzacht op snelle verbinding)
 
 /* ---------- accounts (username + wachtwoord, saldo op server) ---------- */
 const ACC_FILE = path.join(__dirname, "accounts.json");
@@ -84,12 +84,13 @@ function mkFood() {
   return { x: rand(30, WORLD - 30), y: rand(30, WORLD - 30),
     mass: rand(9, 20), color: FOODPAL[(Math.random() * FOODPAL.length) | 0] };
 }
-let botSeq = 0;
+let botSeq = 0, botUid = 0;
 function mkBot() {
   const i = botSeq++;
   const tk = TYPE_KEYS[i % TYPE_KEYS.length], t = TYPES[tk];
   const c = mkCell(rand(200, WORLD - 200), rand(200, WORLD - 200),
     START_MASS * rand(0.85, 1.2), BOTNAMES[i % BOTNAMES.length] + "·" + t.label.slice(0, 3), PAL[i % PAL.length]);
+  c.bid = ++botUid;
   c.type = tk; c.purse = G.wager;
   c.skill = rand(DIFF.skill[0], DIFF.skill[1]);
   c.err = rand(DIFF.err[0], DIFF.err[1]) * (tk === "random" ? 1.6 : 1);
@@ -350,13 +351,22 @@ function authUser(user, pass, mode) {
   return { ok: true, acct, bank: acct.bank, user };
 }
 
-/* ---------- snapshots (voer om de beurt → veel minder bytes) ---------- */
+/* ---------- snapshots (compact arrays + alleen nieuwe namen + compressie) ---------- */
 function snapshot(forId, withFood) {
   const me = G.players.get(forId);
-  const bots = G.bots.filter((b) => b.alive).map((b) => ({
-    x: Math.round(b.x), y: Math.round(b.y), mass: Math.round(b.mass),
-    vx: Math.round(b.vx * 10) / 10, vy: Math.round(b.vy * 10) / 10,
-    c: b.color, n: b.name, p: b.purse, k: b.kills }));
+  const seen = me ? me.seen : null;
+  const meta = [];
+  const pushMeta = (id, name, color) => {
+    if (seen && !seen.has(id)) { seen.add(id); meta.push([id, name, color]); if (seen.size > 5000) seen.clear(); }
+  };
+  // cel = [id,x,y,massa,vx,vy,beurs,kills] — veel kleiner dan objecten met keys
+  const bots = [];
+  for (const b of G.bots) {
+    if (!b.alive) continue;
+    bots.push([b.bid, Math.round(b.x), Math.round(b.y), Math.round(b.mass),
+      Math.round(b.vx * 10) / 10, Math.round(b.vy * 10) / 10, b.purse, b.kills]);
+    pushMeta(b.bid, b.name, b.color);
+  }
   let foods = null;
   if (withFood && me) {
     const px = me.cell.x, py = me.cell.y;
@@ -367,21 +377,22 @@ function snapshot(forId, withFood) {
       if (dx * dx + dy * dy < 1200 * 1200) near.push(f);
       if (near.length >= 500) break;
     }
-    foods = near.slice(0, 180).map((f) => ({ x: Math.round(f.x), y: Math.round(f.y), m: Math.round(f.mass), c: f.color }));
+    foods = near.slice(0, 180).map((f) => [Math.round(f.x), Math.round(f.y), Math.round(f.mass)]);
   }
   const players = [];
   for (const [id, p] of G.players) {
     if (id === forId || p.done || !p.cell.alive) continue;
-    players.push({ x: Math.round(p.cell.x), y: Math.round(p.cell.y), mass: Math.round(p.cell.mass),
-      vx: Math.round(p.cell.vx * 10) / 10, vy: Math.round(p.cell.vy * 10) / 10,
-      n: p.cell.name, c: p.cell.color, p: p.cell.purse, k: p.cell.kills });
+    players.push([id, Math.round(p.cell.x), Math.round(p.cell.y), Math.round(p.cell.mass),
+      Math.round(p.cell.vx * 10) / 10, Math.round(p.cell.vy * 10) / 10,
+      p.cell.purse, p.cell.kills]);
+    pushMeta(id, p.cell.name, p.cell.color);
   }
   return { t: "state", target: ARENA_SIZE,
     you: me ? { x: Math.round(me.cell.x), y: Math.round(me.cell.y), mass: Math.round(me.cell.mass),
       vx: Math.round(me.cell.vx), vy: Math.round(me.cell.vy),
       purse: me.cell.purse, kills: me.cell.kills, alive: me.cell.alive,
       ce: Math.round(me.chargeEl * 10) / 10, charging: !!me.input.c } : null,
-    players, bots, foods };
+    players, bots, foods, meta };
 }
 setInterval(() => { try { tick(); } catch (e) { console.error("tick:", e); } }, TICK_MS);
 let snapN = 0;
@@ -407,7 +418,7 @@ const server = http.createServer((req, res) => {
     res.end(data);
   });
 });
-const wss = new WebSocketServer({ server });
+const wss = new WebSocketServer({ server, perMessageDeflate: true }); // compressie aan = veel minder bytes
 let seq = 0;
 wss.on("connection", (ws) => {
   let id = null;
@@ -437,7 +448,7 @@ wss.on("connection", (ws) => {
         const dx = cell.x - p.cell.x, dy = cell.y - p.cell.y;
         if (Math.hypot(dx, dy) < 700) { cell.x = clamp(cell.x + Math.sign(dx || 1) * 900, 60, WORLD - 60); cell.y = clamp(cell.y + Math.sign(dy || 1) * 900, 60, WORLD - 60); }
       }
-      G.players.set(id, { cell, ws, input: { x: cell.x, y: cell.y, c: false }, chargeEl: 0, joinT: Date.now(), done: false, wager: G.wager, acct: dname, bank });
+      G.players.set(id, { cell, ws, input: { x: cell.x, y: cell.y, c: false }, chargeEl: 0, joinT: Date.now(), done: false, wager: G.wager, acct: dname, bank, seen: new Set() });
       send(ws, { t: "welcome", id, wager: G.wager, bank, target: ARENA_SIZE });
       feed("🌐 <b>" + esc(cell.name) + "</b> joined the arena", "");
       console.log("join", id, cell.name, "wager", G.wager, "players", G.players.size);
