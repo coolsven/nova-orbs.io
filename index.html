@@ -296,6 +296,7 @@ function beep(f=440,d=.08,type='sine',g=.12){ try{ AC=AC||new (window.AudioConte
 
 /* ---------- game state (multiplayer-only: simulatie draait op de server) ---------- */
 const FOODPAL=['#5ef2b8','#5aa8ff','#c792ff','#ffd84d','#ff8ab2','#6ee7ff','#9df06e'];
+const PAL=['#5ef2b8','#5aa8ff','#c792ff','#ff8ab2','#ffd84d','#ff8a5c','#6ee7ff','#9df06e','#ff6b6b','#f2f25e']; // zelfde volgorde als server!
 let S=null;
 
 function newCell(x,y,mass,name,color){
@@ -452,8 +453,13 @@ const Srv = {
     let ws;
     try{ ws=new WebSocket(url); }catch(e){ toast('Ongeldige server-URL'); backToLobby(true); return; }
     this.ws=ws;
+    try{ ws.binaryType='arraybuffer'; }catch(e){} // binaire snapshots
     ws.onopen=()=>{ try{ ws.send(JSON.stringify({t:'join',wager,user:netUser,pass:netPass,mode:'login'})); }catch(e){} };
-    ws.onmessage=(e)=>{ let m; try{ m=JSON.parse(e.data); }catch(err){ return; } this.onMsg(m); };
+    ws.onmessage=(e)=>{
+      if(e.data instanceof ArrayBuffer){ applyNetBin(e.data); return; } // binair spelverkeer
+      if(e.data&&e.data.arrayBuffer){ e.data.arrayBuffer().then(b=>applyNetBin(b)); return; } // Blob-fallback
+      let m; try{ m=JSON.parse(e.data); }catch(err){ return; } this.onMsg(m);
+    };
     ws.onerror=()=>{ if(S&&S.playMode==='net'&&S.mode==='connecting'){ toast('Server niet bereikbaar — check URL / hosting'); backToLobby(true); } };
     ws.onclose=()=>{
       this.ws=null;
@@ -473,7 +479,6 @@ const Srv = {
       feed('Cash met knop, touchscreen-hold of <kbd>Q</kbd> (10s vasthouden).','');
       netLoop();
     }
-    else if(m.t==='state'){ applyNetState(m); }
     else if(m.t==='feed'){ feed(m.html,m.cls||''); }
     else if(m.t==='end'){ onNetEnd(m); }
     else if(m.t==='pong'){ Srv.ms=Math.max(0,Math.round(performance.now()-m.t)); $('hMode').textContent='SERVER · '+Srv.ms+'ms'; }
@@ -491,47 +496,65 @@ function startNetMatch(){
   if(!url){ toast('Vul eerst een server-URL in'); $('srvUrl').focus(); return; }
   Srv.start(url);
 }
-function applyNetState(m){
-  const y=m.you;
-  if(y&&!S.player){
-    const c=newCell(y.x,y.y,y.mass,'JIJ','#5ef2b8');
-    c.isPlayer=true; S.player=c; S.humans=[c];
-  }
-  if(y&&S.player){
+const TDEC=("TextDecoder" in window)?new TextDecoder():null;
+/* binair snapshot parsen (zelfde layout als server/server.js) */
+function applyNetBin(ab){
+  try{
+    const v=new DataView(ab); let o=0;
+    const nB=v.getUint16(o,true);o+=2, nP=v.getUint16(o,true);o+=2, nF=v.getUint16(o,true);o+=2, nM=v.getUint16(o,true);o+=2;
+    const rcell=()=>{ const id=v.getUint16(o,true);o+=2, x=v.getInt16(o,true);o+=2, y=v.getInt16(o,true);o+=2,
+      mass=v.getUint32(o,true);o+=4, vx=v.getInt16(o,true)/10;o+=2, vy=v.getInt16(o,true)/10;o+=2,
+      purse=v.getUint32(o,true);o+=4, kills=v.getUint16(o,true);o+=2;
+      return [id,x,y,mass,vx,vy,purse,kills]; };
+    const bcells=[]; for(let i=0;i<nB;i++) bcells.push(rcell());
+    const pcells=[]; for(let i=0;i<nP;i++) pcells.push(rcell());
+    const farr=(nF>0)?[]:null;
+    if(nF>0){ for(let i=0;i<nF;i++){ const x=v.getInt16(o,true);o+=2, y=v.getInt16(o,true);o+=2, mm=v.getUint16(o,true);o+=2; farr.push([x,y,mm]); } }
+    const yx=v.getInt16(o,true);o+=2, yy=v.getInt16(o,true);o+=2, ym=v.getUint32(o,true);o+=4,
+      yvx=v.getInt16(o,true);o+=2, yvy=v.getInt16(o,true);o+=2, yp=v.getUint32(o,true);o+=4,
+      yk=v.getUint16(o,true);o+=2, ya=v.getUint8(o);o+=1, yce=v.getFloat32(o,true);o+=4; o+=1; // charging-byte overgeslagen
+    if(!S.player){
+      const c=newCell(yx,yy,ym,'JIJ','#5ef2b8');
+      c.isPlayer=true; S.player=c; S.humans=[c];
+    }
     const P=S.player;
-    P.x=y.x;P.y=y.y;P.mass=y.mass;P.r=massToR(y.mass);P.vx=y.vx||0;P.vy=y.vy||0;
-    P.purse=y.purse;P.kills=y.kills;P.alive=y.alive;P.ce=y.ce||0;
+    P.x=yx;P.y=yy;P.mass=ym;P.r=massToR(ym);P.vx=yvx;P.vy=yvy;
+    P.purse=yp;P.kills=yk;P.alive=!!ya;P.ce=yce||0;
     S.kills=P.kills; S.maxMass=Math.max(S.maxMass,P.mass);
-  }
-  for(const e of (m.meta||[])) S.meta[e[0]]={n:e[1],c:e[2]}; // namen/kleuren 1× cachen
-  const look=id=>S.meta[id]||{n:'…',c:'#5aa8ff'};
-  // object-pooling: hergebruik cellen per id i.p.v. elke snapshot alles nieuw (veel minder GC-haperingen)
-  // cel = [id,x,y,massa,vx,vy,beurs,kills]
-  S.bots.length=0;
-  const aliveB=new Set();
-  for(const b of (m.bots||[])){
-    const mt=look(b[0]);
-    let c=S.botPool.get(b[0]);
-    if(!c){ c=newCell(b[1],b[2],b[3],mt.n,mt.c); S.botPool.set(b[0],c); }
-    c.x=b[1];c.y=b[2];c.mass=b[3];c.r=massToR(b[3]);c.vx=b[4]||0;c.vy=b[5]||0;c.alive=true;
-    c.name=mt.n;c.color=mt.c;c.purse=b[6];c.kills=b[7]||0;
-    S.bots.push(c); aliveB.add(b[0]);
-  }
-  for(const k of S.botPool.keys()) if(!aliveB.has(k)) S.botPool.delete(k);
-  S.remotes.length=0;
-  const aliveR=new Set();
-  for(const p of (m.players||[])){
-    const mt=look(p[0]);
-    let c=S.remPool.get(p[0]);
-    if(!c){ c=newCell(p[1],p[2],p[3],mt.n,mt.c); c.remote=true; S.remPool.set(p[0],c); }
-    c.x=p[1];c.y=p[2];c.mass=p[3];c.r=massToR(p[3]);c.vx=p[4]||0;c.vy=p[5]||0;c.alive=true;
-    c.name=mt.n;c.color=mt.c;c.purse=p[6]||0;c.kills=p[7]||0;
-    S.remotes.push(c); aliveR.add(p[0]);
-  }
-  for(const k of S.remPool.keys()) if(!aliveR.has(k)) S.remPool.delete(k);
-  if(m.foods) S.foods=m.foods.map(f=>({x:f[0],y:f[1],mass:f[2],r:massToR(f[2]),color:FOODPAL[Math.abs(f[0]*7+f[1]*13)%FOODPAL.length]})); // voer komt om de beurt binnen
-  S.botTarget=m.target||40;
-  S.snapT=performance.now();
+    for(let i=0;i<nM;i++){
+      const id=v.getUint16(o,true);o+=2, len=v.getUint8(o);o+=1;
+      const bytes=new Uint8Array(ab,o,len); o+=len;
+      const nm=TDEC?TDEC.decode(bytes):'…';
+      const ci=v.getUint8(o);o+=1;
+      S.meta[id]={n:nm,c:PAL[ci]||'#5aa8ff'};
+    }
+    const look=id=>S.meta[id]||{n:'…',c:'#5aa8ff'};
+    S.bots.length=0;
+    const aliveB=new Set();
+    for(const b of bcells){
+      const mt=look(b[0]);
+      let c=S.botPool.get(b[0]);
+      if(!c){ c=newCell(b[1],b[2],b[3],mt.n,mt.c); S.botPool.set(b[0],c); }
+      c.x=b[1];c.y=b[2];c.mass=b[3];c.r=massToR(b[3]);c.vx=b[4]||0;c.vy=b[5]||0;c.alive=true;
+      c.name=mt.n;c.color=mt.c;c.purse=b[6];c.kills=b[7]||0;
+      S.bots.push(c); aliveB.add(b[0]);
+    }
+    for(const k of S.botPool.keys()) if(!aliveB.has(k)) S.botPool.delete(k);
+    S.remotes.length=0;
+    const aliveR=new Set();
+    for(const p of pcells){
+      const mt=look(p[0]);
+      let c=S.remPool.get(p[0]);
+      if(!c){ c=newCell(p[1],p[2],p[3],mt.n,mt.c); c.remote=true; S.remPool.set(p[0],c); }
+      c.x=p[1];c.y=p[2];c.mass=p[3];c.r=massToR(p[3]);c.vx=p[4]||0;c.vy=p[5]||0;c.alive=true;
+      c.name=mt.n;c.color=mt.c;c.purse=p[6]||0;c.kills=p[7]||0;
+      S.remotes.push(c); aliveR.add(p[0]);
+    }
+    for(const k of S.remPool.keys()) if(!aliveR.has(k)) S.remPool.delete(k);
+    if(farr) S.foods=farr.map(f=>({x:f[0],y:f[1],mass:f[2],r:massToR(f[2]),color:FOODPAL[Math.abs(f[0]*7+f[1]*13)%FOODPAL.length]}));
+    S.botTarget=40;
+    S.snapT=performance.now();
+  }catch(e){ /* kapotte snapshot overslaan */ }
 }
 function netLoop(){
   if(!S||S.playMode!=='net'||S.mode!=='playing') return;

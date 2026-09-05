@@ -16,7 +16,7 @@ const { WebSocketServer } = require("ws");
 const PORT = process.env.PORT || 3000;
 const WORLD = 5500, EAT = 1.15, CASHOUT = 10, RAKE = 0.05;
 const START_MASS = 430, MAX_R = 235, FOOD_TARGET = 1000, ARENA_SIZE = 40;
-const MAX_PLAYERS = 12, TICK_MS = 50, SNAP_MS = Math.round(1000 / (Number(process.env.SNAP_HZ) || 15)); // hoger = smoother (10 = zuinig, 15 = standaard, 20 = boterzacht op snelle verbinding)
+const MAX_PLAYERS = 12, TICK_MS = 50, SNAP_MS = Math.round(1000 / (Number(process.env.SNAP_HZ) || 20)); // hoger = smoother (10 = zuinig, 20 = standaard)
 
 /* ---------- accounts (username + wachtwoord, saldo op server) ---------- */
 const ACC_FILE = path.join(__dirname, "accounts.json");
@@ -351,22 +351,19 @@ function authUser(user, pass, mode) {
   return { ok: true, acct, bank: acct.bank, user };
 }
 
-/* ---------- snapshots (compact arrays + alleen nieuwe namen + compressie) ---------- */
-function snapshot(forId, withFood) {
+/* ---------- snapshots: binair protocol (veel kleiner + sneller dan JSON) ----------
+   header: u16 bots, u16 spelers, u16 voer, u16 meta
+   cel: u16 id, i16 x, i16 y, u32 massa, i16 vx10, i16 vy10, u32 beurs, u16 kills (20B)
+   voer: i16 x, i16 y, u16 massa (6B)
+   jij: i16 x,y, u32 massa, i16 vx,vy, u32 beurs, u16 kills, u8 alive, f32 ce, u8 charging (24B)
+   meta: u16 id, u8 len, bytes, u8 kleurIdx */
+function snapshotBin(forId, withFood) {
   const me = G.players.get(forId);
   const seen = me ? me.seen : null;
-  const meta = [];
-  const pushMeta = (id, name, color) => {
-    if (seen && !seen.has(id)) { seen.add(id); meta.push([id, name, color]); if (seen.size > 5000) seen.clear(); }
-  };
-  // cel = [id,x,y,massa,vx,vy,beurs,kills] — veel kleiner dan objecten met keys
-  const bots = [];
-  for (const b of G.bots) {
-    if (!b.alive) continue;
-    bots.push([b.bid, Math.round(b.x), Math.round(b.y), Math.round(b.mass),
-      Math.round(b.vx * 10) / 10, Math.round(b.vy * 10) / 10, b.purse, b.kills]);
-    pushMeta(b.bid, b.name, b.color);
-  }
+  const bcells = [];
+  for (const b of G.bots) if (b.alive) bcells.push(b);
+  const pcells = [];
+  for (const [id, p] of G.players) if (id !== forId && !p.done && p.cell.alive) pcells.push(p);
   let foods = null;
   if (withFood && me) {
     const px = me.cell.x, py = me.cell.y;
@@ -377,30 +374,75 @@ function snapshot(forId, withFood) {
       if (dx * dx + dy * dy < 1200 * 1200) near.push(f);
       if (near.length >= 500) break;
     }
-    foods = near.slice(0, 180).map((f) => [Math.round(f.x), Math.round(f.y), Math.round(f.mass)]);
+    foods = near.slice(0, 180);
   }
-  const players = [];
-  for (const [id, p] of G.players) {
-    if (id === forId || p.done || !p.cell.alive) continue;
-    players.push([id, Math.round(p.cell.x), Math.round(p.cell.y), Math.round(p.cell.mass),
-      Math.round(p.cell.vx * 10) / 10, Math.round(p.cell.vy * 10) / 10,
-      p.cell.purse, p.cell.kills]);
-    pushMeta(id, p.cell.name, p.cell.color);
+  const metaBufs = [];
+  const metaFor = (id, name, color) => {
+    if (seen && !seen.has(id)) {
+      seen.add(id);
+      const nb = Buffer.from(String(name).slice(0, 24), "utf8").slice(0, 64);
+      metaBufs.push({ id: id & 0xffff, nb, cidx: Math.max(0, PAL.indexOf(color)) });
+      if (seen.size > 5000) seen.clear();
+    }
+  };
+  for (const b of bcells) metaFor(b.bid, b.name, b.color);
+  for (const p of pcells) metaFor(p.sid, p.cell.name, p.cell.color);
+  const nf = foods ? foods.length : 0;
+  const metaSize = metaBufs.reduce((s, m) => s + 2 + 1 + m.nb.length + 1, 0);
+  const buf = Buffer.allocUnsafe(8 + 20 * (bcells.length + pcells.length) + 6 * nf + 24 + metaSize);
+  let o = 0;
+  buf.writeUInt16LE(bcells.length, o); o += 2;
+  buf.writeUInt16LE(pcells.length, o); o += 2;
+  buf.writeUInt16LE(nf, o); o += 2;
+  buf.writeUInt16LE(metaBufs.length, o); o += 2;
+  const wcell = (id, x, y, mass, vx, vy, purse, kills) => {
+    buf.writeUInt16LE(id & 0xffff, o); o += 2;
+    buf.writeInt16LE(clamp(Math.round(x), -30000, 30000), o); o += 2;
+    buf.writeInt16LE(clamp(Math.round(y), -30000, 30000), o); o += 2;
+    buf.writeUInt32LE(Math.max(0, Math.round(mass)), o); o += 4;
+    buf.writeInt16LE(clamp(Math.round(vx * 10), -30000, 30000), o); o += 2;
+    buf.writeInt16LE(clamp(Math.round(vy * 10), -30000, 30000), o); o += 2;
+    buf.writeUInt32LE(Math.max(0, Math.round(purse)), o); o += 4;
+    buf.writeUInt16LE(Math.min(65535, kills || 0), o); o += 2;
+  };
+  for (const b of bcells) wcell(b.bid, b.x, b.y, b.mass, b.vx, b.vy, b.purse, b.kills);
+  for (const p of pcells) wcell(p.sid, p.cell.x, p.cell.y, p.cell.mass, p.cell.vx, p.cell.vy, p.cell.purse, p.cell.kills);
+  if (foods) for (const f of foods) {
+    buf.writeInt16LE(Math.round(f.x), o); o += 2;
+    buf.writeInt16LE(Math.round(f.y), o); o += 2;
+    buf.writeUInt16LE(Math.min(65535, Math.round(f.mass)), o); o += 2;
   }
-  return { t: "state", target: ARENA_SIZE,
-    you: me ? { x: Math.round(me.cell.x), y: Math.round(me.cell.y), mass: Math.round(me.cell.mass),
-      vx: Math.round(me.cell.vx), vy: Math.round(me.cell.vy),
-      purse: me.cell.purse, kills: me.cell.kills, alive: me.cell.alive,
-      ce: Math.round(me.chargeEl * 10) / 10, charging: !!me.input.c } : null,
-    players, bots, foods, meta };
+  if (me) {
+    const c = me.cell;
+    buf.writeInt16LE(Math.round(c.x), o); o += 2;
+    buf.writeInt16LE(Math.round(c.y), o); o += 2;
+    buf.writeUInt32LE(Math.max(0, Math.round(c.mass)), o); o += 4;
+    buf.writeInt16LE(clamp(Math.round(c.vx * 10), -30000, 30000), o); o += 2;
+    buf.writeInt16LE(clamp(Math.round(c.vy * 10), -30000, 30000), o); o += 2;
+    buf.writeUInt32LE(Math.max(0, Math.round(c.purse)), o); o += 4;
+    buf.writeUInt16LE(Math.min(65535, c.kills || 0), o); o += 2;
+    buf.writeUInt8(c.alive ? 1 : 0, o); o += 1;
+    buf.writeFloatLE(me.chargeEl || 0, o); o += 4;
+    buf.writeUInt8(me.input.c ? 1 : 0, o); o += 1;
+  } else {
+    for (let k = 0; k < 24; k++) { buf.writeUInt8(0, o); o += 1; }
+  }
+  for (const m of metaBufs) {
+    buf.writeUInt16LE(m.id, o); o += 2;
+    buf.writeUInt8(m.nb.length, o); o += 1;
+    m.nb.copy(buf, o); o += m.nb.length;
+    buf.writeUInt8(m.cidx & 0xff, o); o += 1;
+  }
+  return buf;
 }
+function sendBin(ws, buf) { try { if (ws.readyState === 1) ws.send(buf); } catch (e) {} }
 setInterval(() => { try { tick(); } catch (e) { console.error("tick:", e); } }, TICK_MS);
 let snapN = 0;
 setInterval(() => {
   const withFood = (snapN++ % 2 === 0); // voer elke 2e snapshot: halveert dataverkeer
   for (const [id] of G.players) {
     const p = G.players.get(id);
-    if (p && !p.done) send(p.ws, snapshot(id, withFood));
+    if (p && !p.done) sendBin(p.ws, snapshotBin(id, withFood));
   }
   if (feedQueue.length) { const q = feedQueue; feedQueue = []; for (const m of q) broadcast({ t: "feed", html: m.html, cls: m.cls }); }
 }, SNAP_MS);
@@ -419,8 +461,9 @@ const server = http.createServer((req, res) => {
   });
 });
 const wss = new WebSocketServer({ server, perMessageDeflate: true }); // compressie aan = veel minder bytes
-let seq = 0;
+let seq = 0, sidSeq = 0;
 wss.on("connection", (ws) => {
+  try { ws._socket.setNoDelay(true); } catch (e) {} // geen TCP-bundeling = tot 40ms minder vertraging
   let id = null;
   ws.on("message", (raw) => {
     let m; try { m = JSON.parse(raw); } catch (e) { return; }
@@ -448,7 +491,7 @@ wss.on("connection", (ws) => {
         const dx = cell.x - p.cell.x, dy = cell.y - p.cell.y;
         if (Math.hypot(dx, dy) < 700) { cell.x = clamp(cell.x + Math.sign(dx || 1) * 900, 60, WORLD - 60); cell.y = clamp(cell.y + Math.sign(dy || 1) * 900, 60, WORLD - 60); }
       }
-      G.players.set(id, { cell, ws, input: { x: cell.x, y: cell.y, c: false }, chargeEl: 0, joinT: Date.now(), done: false, wager: G.wager, acct: dname, bank, seen: new Set() });
+      G.players.set(id, { cell, ws, input: { x: cell.x, y: cell.y, c: false }, chargeEl: 0, joinT: Date.now(), done: false, wager: G.wager, acct: dname, bank, seen: new Set(), sid: 60000 + (++sidSeq) });
       send(ws, { t: "welcome", id, wager: G.wager, bank, target: ARENA_SIZE });
       feed("🌐 <b>" + esc(cell.name) + "</b> joined the arena", "");
       console.log("join", id, cell.name, "wager", G.wager, "players", G.players.size);
