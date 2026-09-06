@@ -192,6 +192,7 @@
     <button class="playbtn" id="startBtn">play</button>
     <div class="mfoot"><button class="icobtn" id="shopBtn">🛒</button><button class="icobtn" id="helpBtn">?</button></div>
     <div class="srvmini"><input id="srvUrl" type="text" inputmode="url" spellcheck="false" placeholder="wss://..."><button class="abtn" id="srvReset" title="standaardserver">↺</button></div>
+    <div class="mtxt" id="verLine" style="text-align:center;font-size:10px;min-height:14px"></div>
   </div>
 </div>
 
@@ -261,6 +262,7 @@ const CFG = {
   MAX_R: 235,
 };
 const $ = id => document.getElementById(id);
+const CLIENT_V = '1.9'; // bump bij elke release — zo zien we zeker dat je de nieuwe code draait
 const fmt = n => Math.round(n).toLocaleString('nl-NL');
 const clamp = (v,a,b)=>Math.max(a,Math.min(b,v));
 const massToR = m => clamp(Math.sqrt(m), 4, CFG.MAX_R);
@@ -337,6 +339,7 @@ function refreshMenu(){
   $('shopBal').textContent=fmt(bank);
   $('wAmt').textContent=fmt(wager);
   $('srvUrl').value = srvDirty ? $('srvUrl').value : (AUTO_SRV||localStorage.getItem('nova_srv')||DEFAULT_SRV);
+  $('verLine').textContent='client v'+CLIENT_V;
   document.querySelectorAll('#presets button').forEach(b=>b.classList.toggle('on',b.dataset.p!=='max'&&parseInt(b.dataset.p,10)===wager));
   $('loginBtn').textContent=netUser||'login';
 }
@@ -472,6 +475,7 @@ const Srv = {
   onMsg(m){
     if(!S||S.playMode!=='net') return;
     if(m.t==='welcome'){ S.mode='playing'; S.last=performance.now();
+      $('verLine').textContent='client v'+CLIENT_V+' · server v'+(m.sv||'?');
       if(typeof m.bank==='number'){ bank=Math.round(m.bank); save(); } // server-bank is leidend
       if(m.wager){ wager=m.wager; refreshMenu();
         feed('Server-inzet: <b>'+fmt(wager)+'</b> 🪙 (tafel — eerste speler bepaalt) · saldo <b>'+fmt(bank)+'</b> 🪙','gold'); }
@@ -622,7 +626,7 @@ function netLoop(){
     const seg=Math.max(1,(S.snapB||now)-(S.snapA||now));
     const avg=S.snapAvg||seg;
     const dynDelay=clamp(avg*1.1+(S.snapJit||0)*1.5,40,160);
-    const al=clamp((now-dynDelay-(S.snapA||now))/seg,0,1);
+    const al=clamp((now-dynDelay-(S.snapA||now))/seg,0,1.6); // tot 1.6: bij haperingen doorbewegen i.p.v. bevriezen
     for(const b of S.bots){ b.x=b.ox+(b.tx-b.ox)*al; b.y=b.oy+(b.ty-b.oy)*al; }
     for(const r of S.remotes){ r.x=r.ox+(r.tx-r.ox)*al; r.y=r.oy+(r.ty-r.oy)*al; }
     // cashout-ring volgt de server-timer (authoritatief)

@@ -14,6 +14,7 @@ const crypto = require("crypto");
 const { WebSocketServer } = require("ws");
 
 const PORT = process.env.PORT || 3000;
+const SERVER_V = '1.9'; // bump mee met client
 const WORLD = 5500, EAT = 1.15, CASHOUT = 10, RAKE = 0.05;
 const START_MASS = 430, MAX_R = 235, FOOD_TARGET = 1000, ARENA_SIZE = 40;
 const MAX_PLAYERS = 12, TICK_MS = 50, SNAP_MS = Math.round(1000 / (Number(process.env.SNAP_HZ) || 20)); // hoger = smoother (10 = zuinig, 20 = standaard)
@@ -492,7 +493,7 @@ wss.on("connection", (ws) => {
         if (Math.hypot(dx, dy) < 700) { cell.x = clamp(cell.x + Math.sign(dx || 1) * 900, 60, WORLD - 60); cell.y = clamp(cell.y + Math.sign(dy || 1) * 900, 60, WORLD - 60); }
       }
       G.players.set(id, { cell, ws, input: { x: cell.x, y: cell.y, c: false }, chargeEl: 0, joinT: Date.now(), done: false, wager: G.wager, acct: dname, bank, seen: new Set(), sid: 60000 + (++sidSeq) });
-      send(ws, { t: "welcome", id, wager: G.wager, bank, target: ARENA_SIZE });
+      send(ws, { t: "welcome", id, wager: G.wager, bank, target: ARENA_SIZE, sv: SERVER_V });
       feed("🌐 <b>" + esc(cell.name) + "</b> joined the arena", "");
       console.log("join", id, cell.name, "wager", G.wager, "players", G.players.size);
     } else if (m.t === "auth") {
@@ -521,4 +522,4 @@ wss.on("connection", (ws) => {
     }
   });
 });
-server.listen(PORT, () => console.log("NOVA ORBS server live op poort " + PORT + " · bots: " + (process.env.BOT_DIFF || "normaal") + " · snapshots: " + Math.round(1000 / SNAP_MS) + "/s"));
+server.listen(PORT, () => console.log("NOVA ORBS v" + SERVER_V + " live op poort " + PORT + " · bots: " + (process.env.BOT_DIFF || "normaal") + " · snapshots: " + Math.round(1000 / SNAP_MS) + "/s"));
