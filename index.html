@@ -614,13 +614,14 @@ function netLoop(){
     const wy=P.y+(mouse.y-innerHeight/2)*(P.r/320+0.55);
     Srv.sendInput(wx,wy,S.charging);
     if(now-Srv.lastPing>2000){ Srv.lastPing=now; try{ Srv.ws&&Srv.ws.readyState===1&&Srv.ws.send(JSON.stringify({t:'ping',t:now})); }catch(e){} }
-    // eigen cel voorspellen (directe feel); anderen interpoleren met adaptieve vertraging:
-    // goed netwerk ±90ms, rommelig netwerk tot 350ms — altijd smooth, nooit hakkel
+    // eigen cel voorspellen (directe feel); anderen interpoleren met adaptieve vertraging
+    // vertraging schaalt met het snapshot-tempo (±1 interval) zodat het beeld altijd vloeit, nooit hakt
     const dtS=Math.min(.25,(now-(S.snapT||now))/1000);
     S.snapT=now;
     P.x+=P.vx*dtS; P.y+=P.vy*dtS;
     const seg=Math.max(1,(S.snapB||now)-(S.snapA||now));
-    const dynDelay=clamp((S.snapAvg||50)*1.5+(S.snapJit||0)*2,90,350);
+    const avg=S.snapAvg||seg;
+    const dynDelay=clamp(avg*1.1+(S.snapJit||0)*1.5,40,160);
     const al=clamp((now-dynDelay-(S.snapA||now))/seg,0,1);
     for(const b of S.bots){ b.x=b.ox+(b.tx-b.ox)*al; b.y=b.oy+(b.ty-b.oy)*al; }
     for(const r of S.remotes){ r.x=r.ox+(r.tx-r.ox)*al; r.y=r.oy+(r.ty-r.oy)*al; }
