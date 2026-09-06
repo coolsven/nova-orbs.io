@@ -460,7 +460,7 @@ const server = http.createServer((req, res) => {
     res.end(data);
   });
 });
-const wss = new WebSocketServer({ server, perMessageDeflate: true }); // compressie aan = veel minder bytes
+const wss = new WebSocketServer({ server }); // géén perMessageDeflate: binair is al klein en comprimeren geeft CPU-haperingen op gratis hosting
 let seq = 0, sidSeq = 0;
 wss.on("connection", (ws) => {
   try { ws._socket.setNoDelay(true); } catch (e) {} // geen TCP-bundeling = tot 40ms minder vertraging

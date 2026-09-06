@@ -555,8 +555,10 @@ function applyNetBin(ab){
       c.isPlayer=true; S.player=c; S.humans=[c];
     }
     const P=S.player;
-    P.x=yx;P.y=yy;P.mass=ym;P.r=massToR(ym);P.vx=yvx;P.vy=yvy;
+    P.mass=ym;P.r=massToR(ym);P.vx=yvx;P.vy=yvy;
     P.purse=yp;P.kills=yk;P.alive=!!ya;P.ce=yce||0;
+    if(!S._selfInit){ P.x=yx; P.y=yy; S._selfInit=true; } // 1e keer exact
+    else { P.x+=(yx-P.x)*0.6; P.y+=(yy-P.y)*0.6; } // daarna zacht bijsturen i.p.v. rukken
     S.kills=P.kills; S.maxMass=Math.max(S.maxMass,P.mass);
     for(let i=0;i<nM;i++){
       const id=v.getUint16(o,true); o+=2;
@@ -593,7 +595,12 @@ function applyNetBin(ab){
     for(const k of S.remPool.keys()) if(!aliveR.has(k)) S.remPool.delete(k);
     if(farr) S.foods=farr.map(f=>({x:f[0],y:f[1],mass:f[2],r:massToR(f[2]),color:FOODPAL[Math.abs(f[0]*7+f[1]*13)%FOODPAL.length]}));
     S.botTarget=40;
-    S.snapA=S.snapB||performance.now(); S.snapB=performance.now(); S.snapT=S.snapB;
+    // jitter meten: bij een rommelige verbinding automatisch meer vertraging (= smooth i.p.v. hakkel)
+    const nowT=performance.now();
+    const prevB=S.snapB||nowT, dt=nowT-prevB;
+    S.snapAvg=(S.snapAvg||50)*0.9+dt*0.1;
+    S.snapJit=(S.snapJit||0)*0.9+Math.abs(dt-S.snapAvg)*0.1;
+    S.snapA=prevB; S.snapB=nowT; S.snapT=nowT;
   }catch(e){ /* kapotte snapshot overslaan */ }
 }
 function netLoop(){
@@ -607,12 +614,14 @@ function netLoop(){
     const wy=P.y+(mouse.y-innerHeight/2)*(P.r/320+0.55);
     Srv.sendInput(wx,wy,S.charging);
     if(now-Srv.lastPing>2000){ Srv.lastPing=now; try{ Srv.ws&&Srv.ws.readyState===1&&Srv.ws.send(JSON.stringify({t:'ping',t:now})); }catch(e){} }
-    // eigen cel voorspellen (directe feel); anderen interpoleren met ~100ms vertraging (boterzacht, geen jitter)
+    // eigen cel voorspellen (directe feel); anderen interpoleren met adaptieve vertraging:
+    // goed netwerk ±90ms, rommelig netwerk tot 350ms — altijd smooth, nooit hakkel
     const dtS=Math.min(.25,(now-(S.snapT||now))/1000);
     S.snapT=now;
     P.x+=P.vx*dtS; P.y+=P.vy*dtS;
     const seg=Math.max(1,(S.snapB||now)-(S.snapA||now));
-    const al=clamp((now-100-(S.snapA||now))/seg,0,1);
+    const dynDelay=clamp((S.snapAvg||50)*1.5+(S.snapJit||0)*2,90,350);
+    const al=clamp((now-dynDelay-(S.snapA||now))/seg,0,1);
     for(const b of S.bots){ b.x=b.ox+(b.tx-b.ox)*al; b.y=b.oy+(b.ty-b.oy)*al; }
     for(const r of S.remotes){ r.x=r.ox+(r.tx-r.ox)*al; r.y=r.oy+(r.ty-r.oy)*al; }
     // cashout-ring volgt de server-timer (authoritatief)
