@@ -14,7 +14,7 @@ const crypto = require("crypto");
 const { WebSocketServer } = require("ws");
 
 const PORT = process.env.PORT || 3000;
-const SERVER_V = '2.6'; // bump mee met client
+const SERVER_V = '2.7'; // bump mee met client
 const WORLD = 5500, EAT = 1.15, CASHOUT = 10, RAKE = 0.05;
 const START_MASS = 430, MAX_R = 235, FOOD_TARGET = 1000, ARENA_SIZE = 40;
 const MAX_PLAYERS = 12, TICK_MS = 50, SNAP_MS = Math.round(1000 / (Number(process.env.SNAP_HZ) || 20)); // hoger = smoother (10 = zuinig, 20 = standaard)
@@ -309,9 +309,9 @@ function tick() {
     for (const b of all) {
       if (!tryEat(a, b)) continue;
       const pa = ownerOf(a), pb = ownerOf(b);
-      if (pa && pa.isPlayer) feed("💰 <b>" + esc(a.name) + "</b> at <b>" + esc(b.name) + "</b> op · <b>+" + fmt(b.purse) + " 🪙</b>", "good");
+      if (pa && pa.isPlayer) feed("💰 <b>" + esc(a.name) + "</b> ate <b>" + esc(b.name) + "</b> · <b>+" + fmt(b.purse) + " 🪙</b>", "good");
       else if (pb && pb.isPlayer) { killPlayer(pb.id, a); return; }
-      else if (pa || pb) feed("⚔️ " + esc(a.name) + " at " + esc(b.name) + " op", "");
+      else if (pa || pb) feed("⚔️ " + esc(a.name) + " ate " + esc(b.name), "");
       if (!isPlayerCell(b)) G.respawnAt.push(now + rand(2000, 4000));
     }
   }
@@ -345,7 +345,7 @@ function spawnBot() {
   G.bots.push(nb);
   if (G.bots.length > 120) G.bots = G.bots.filter((b) => b.alive).slice(-120); // cap geheugen
 }
-function fmt(n) { return Math.round(n).toLocaleString("nl-NL"); }
+function fmt(n) { return Math.round(n).toLocaleString("en-US"); }
 
 function cashOut(id) {
   const p = G.players.get(id); if (!p || p.done) return;
@@ -356,7 +356,7 @@ function cashOut(id) {
   send(p.ws, { t: "end", kind: "cash", amount: got, wager: p.wager, bank: p.bank,
     kills: p.cell.kills, mass: Math.round(p.cell.mass),
     time: Math.round((Date.now() - p.joinT) / 1000) });
-  feed("✅ <b>" + esc(p.cell.name) + "</b> cashte <b>" + fmt(got) + " 🪙</b> uit", "gold");
+  feed("✅ <b>" + esc(p.cell.name) + "</b> cashed out <b>" + fmt(got) + " 🪙</b>", "gold");
   G.players.delete(id);
   G.respawnAt.push(Date.now() + 2500);
 }
@@ -367,7 +367,7 @@ function killPlayer(id, killer) {
     kills: p.cell.kills, mass: Math.round(p.cell.mass),
     time: Math.round((Date.now() - p.joinT) / 1000),
     killer: killer ? killer.name : "—", purse: Math.round(p.cell.purse) });
-  feed("☠️ <b>" + esc(killer ? killer.name : "—") + "</b> at <b>" + esc(p.cell.name) + "</b> op", "bad");
+  feed("☠️ <b>" + esc(killer ? killer.name : "—") + "</b> ate <b>" + esc(p.cell.name) + "</b>", "bad");
   G.players.delete(id);
   G.respawnAt.push(Date.now() + 2500);
 }
@@ -378,18 +378,18 @@ function broadcast(o) { for (const p of G.players.values()) send(p.ws, o); }
 function authUser(user, pass, mode) {
   user = String(user || "").trim(); pass = String(pass || "");
   if (!user) return { ok: true, guest: true, bank: 1000 };
-  if (!validUser(user)) return { ok: false, reason: "Naam: 3-16 tekens (letters, cijfers, _ . -)" };
-  if (pass.length < 4) return { ok: false, reason: "Wachtwoord: minimaal 4 tekens" };
+  if (!validUser(user)) return { ok: false, reason: "Name: 3-16 chars (letters, numbers, _ . -)" };
+  if (pass.length < 4) return { ok: false, reason: "Password: min 4 chars" };
   if (mode === "register") {
-    if (ACC[user]) return { ok: false, reason: "Naam bestaat al — klik Login" };
+    if (ACC[user]) return { ok: false, reason: "Name taken — click Login" };
     const salt = crypto.randomBytes(8).toString("hex");
     ACC[user] = { salt, hash: hashPass(salt, pass), bank: 1000, created: Date.now(), lastClaim: 0 };
     saveAcc(); console.log("register", user);
     return { ok: true, acct: ACC[user], bank: 1000, user };
   }
-  const acct = ACC[user];
-  if (!acct) return { ok: false, reason: "Account onbekend — klik Registreer" };
-  if (acct.hash !== hashPass(acct.salt, pass)) return { ok: false, reason: "Verkeerd wachtwoord" };
+    const acct = ACC[user];
+    if (!acct) return { ok: false, reason: "Unknown account — click Register" };
+    if (acct.hash !== hashPass(acct.salt, pass)) return { ok: false, reason: "Wrong password" };
   return { ok: true, acct, bank: acct.bank, user };
 }
 
@@ -531,7 +531,7 @@ wss.on("connection", (ws) => {
       let bank = r.bank, dname = r.user || null;
       if (bank < 10) { bank += 500; if (acct) { acct.bank = bank; saveAcc(); } } // starterbonus
       if (G.players.size === 0) G.wager = clamp(Math.round(Number(m.wager) || 100), 10, 100000); // eerste speler bepaalt de tafel-inzet
-      if (bank < G.wager) { send(ws, { t: "end", kind: "authfail", reason: "Te weinig saldo voor deze tafel (" + fmt(G.wager) + " 🪙 nodig)" }); return; }
+      if (bank < G.wager) { send(ws, { t: "end", kind: "authfail", reason: "Not enough balance for this table (" + fmt(G.wager) + " 🪙 needed)" }); return; }
       bank -= G.wager; // inzet server-side ingehouden
       if (acct) { acct.bank = bank; saveAcc(); }
       id = "u" + (++seq) + Math.random().toString(36).slice(2, 6);
@@ -567,7 +567,7 @@ wss.on("connection", (ws) => {
   ws.on("close", () => {
     if (id && G.players.has(id)) {
       const p = G.players.get(id);
-      feed("🌐 <b>" + esc(p.cell.name) + "</b> verliet de arena", "");
+      feed("🌐 <b>" + esc(p.cell.name) + "</b> left the arena", "");
       G.players.delete(id);
       G.respawnAt.push(Date.now() + 2500);
     }

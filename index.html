@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="nl">
+<html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
@@ -57,7 +57,10 @@
   #boostBtn.on{box-shadow:0 0 26px rgba(255,159,67,.7);border-color:#ffd0a0}
   /* top-10 aan de linkerkant van het startscherm */
   #topCard{position:fixed;left:16px;top:50%;transform:translateY(-50%);z-index:31;width:240px;background:#1a2342;border:1px solid rgba(255,255,255,.08);border-radius:18px;padding:16px;display:flex;flex-direction:column;gap:10px;box-shadow:0 20px 60px rgba(0,0,0,.5)}
+  /* coming-soon even groot aan de rechterkant */
+  #soonCard{position:fixed;right:16px;top:50%;transform:translateY(-50%);z-index:31;width:240px;background:#1a2342;border:1px solid rgba(255,255,255,.08);border-radius:18px;padding:16px;display:flex;flex-direction:column;gap:10px;box-shadow:0 20px 60px rgba(0,0,0,.5);text-align:center}
   @media(max-width:920px){ #topCard{display:none} }
+  @media(max-width:920px){ #soonCard{display:none} }
   #dbg{position:fixed;top:64px;left:50%;transform:translateX(-50%);z-index:10;pointer-events:none;font-family:monospace;font-size:11px;color:#8f9;text-shadow:1px 1px 0 #000;background:rgba(0,0,0,.45);padding:4px 10px;border-radius:8px;white-space:nowrap}
   /* ---------- multiplayer / inputs ---------- */
   #cashWrap2{position:fixed;left:16px;bottom:170px;z-index:12;display:none;flex-direction:column;align-items:center;gap:8px}
@@ -159,15 +162,15 @@
 <div id="hud">
   <div class="cluster">
     <div class="brand">NOVA <em>ORBS</em></div>
-    <div class="stat"><small>Massa</small><b id="hMass">0</b></div>
+    <div class="stat"><small>Mass</small><b id="hMass">0</b></div>
     <div class="stat"><small>Kills</small><b id="hKills">0</b></div>
     <div class="stat"><small>Alive</small><b id="hAlive">–</b></div>
-    <div class="stat"><small>Modus</small><b id="hMode">SOLO</b></div>
+    <div class="stat"><small>Mode</small><b id="hMode">SERVER</b></div>
   </div>
   <div class="cluster">
-    <div class="stat"><small>Bank (veilig)</small><b id="hBank">1.000</b></div>
-    <div class="stat gold"><small>Beurs (op tafel)</small><b id="hPurse">0</b></div>
-    <div class="stat mint"><small>Cashout-potentieel</small><b id="hNet">0</b></div>
+    <div class="stat"><small>Bank (safe)</small><b id="hBank">1,000</b></div>
+    <div class="stat gold"><small>Purse (at stake)</small><b id="hPurse">0</b></div>
+    <div class="stat mint"><small>Cashout value</small><b id="hNet">0</b></div>
   </div>
 </div>
 
@@ -182,12 +185,12 @@
 <canvas id="mini" width="150" height="150"></canvas>
 
 <div id="cashWrap">
-  <button id="boostBtn">BOOST<span>hold / spatie</span></button>
+  <button id="boostBtn">BOOST<span>hold / space</span></button>
   <div id="cashRing">
     <svg width="132" height="132"><circle cx="66" cy="66" r="58" fill="none" stroke="#232c55" stroke-width="9"/><circle id="cashArc" cx="66" cy="66" r="58" fill="none" stroke="#ffd84d" stroke-width="9" stroke-linecap="round" stroke-dasharray="364.4" stroke-dashoffset="364.4"/></svg>
     <button id="cashBtn"><small>CASH OUT</small><span class="amt" id="cashAmt">0</span><span class="tmr" id="cashTmr">HOLD 10s</span></button>
   </div>
-  <div id="cashHint">Houd <b>10s</b> ingedrukt (knop, touchscreen of <b>Q</b>). Loslaten of dood = geannuleerd.</div>
+  <div id="cashHint">Hold <b>10s</b> (button, touchscreen or <b>Q</b>). Release or death = cancelled.</div>
 </div>
 
 <!-- LOBBY -->
@@ -204,13 +207,17 @@
     </div>
     <button class="playbtn" id="startBtn">play</button>
     <div class="mfoot"><button class="icobtn" id="shopBtn">🛒</button><button class="icobtn" id="helpBtn">?</button></div>
-    <div class="srvmini"><input id="srvUrl" type="text" inputmode="url" spellcheck="false" placeholder="wss://..."><button class="abtn" id="srvReset" title="standaardserver">↺</button></div>
+    <div class="srvmini"><input id="srvUrl" type="text" inputmode="url" spellcheck="false" placeholder="wss://..."><button class="abtn" id="srvReset" title="default server">↺</button></div>
     <div class="mtxt" id="verLine" style="text-align:center;font-size:10px;min-height:14px"></div>
   </div>
   <div id="topCard">
-    <div class="title" style="font-size:13px;margin:0">top 10 rijkste</div>
-    <ol id="topList" class="toplist"><li>laden…</li></ol>
+    <div class="title" style="font-size:13px;margin:0">top 10 richest</div>
+    <ol id="topList" class="toplist"><li>loading…</li></ol>
     <div class="mtxt" id="topAge" style="text-align:center;font-size:10px;min-height:14px"></div>
+  </div>
+  <div id="soonCard">
+    <div class="title" style="font-size:13px;margin:0">coming soon</div>
+    <div class="mtxt" style="text-align:center;font-size:11px">new features dropping soon…</div>
   </div>
 </div>
 
@@ -230,9 +237,9 @@
 <div class="overlay hidden modal" id="shopModal">
   <div class="mcard">
     <div class="title" style="font-size:18px">shop</div>
-    <div class="mtxt" style="text-align:center">saldo: <b>$:<span id="shopBal">0</span></b></div>
-    <div class="mrow"><button class="abtn" id="claimBtn">+500 gratis</button></div>
-    <div class="mtxt" id="shopMsg" style="text-align:center;font-size:11px;min-height:20px">gratis coins · max 1× per 5 min · prototype, geen echt geld</div>
+    <div class="mtxt" style="text-align:center">balance: <b>$:<span id="shopBal">0</span></b></div>
+    <div class="mrow"><button class="abtn" id="claimBtn">+500 free</button></div>
+    <div class="mtxt" id="shopMsg" style="text-align:center;font-size:11px;min-height:20px">free coins · max once per 5 min · prototype, no real money</div>
     <button class="mclose" id="shopClose">close</button>
   </div>
 </div>
@@ -242,12 +249,12 @@
   <div class="mcard">
     <div class="title" style="font-size:18px">how to play</div>
     <div class="mtxt">
-      · Iedereen zet <b>dezelfde inzet</b> in, live tegen echte spelers + bots.<br>
-      · Coins krijg je <b>alleen</b> door spelers op te eten — voer maakt je alleen <i>groter</i>.<br>
-      · Houd <b>CASH OUT 10s</b> vast (knop, touchscreen of <b>Q</b>) om te banken. Loslaten of dood = weg.<br>
-      · Houd <b>BOOST</b> vast (knop of <b>spatie</b>) om te spurten: sneller, maar je verliest massa als bolletjes achter je.<br>
-      · Dood = inzet kwijt. <b>Geen tijdslimiet.</b><br>
-      · Groot = trager. Klein = snel en wendbaar.
+      · Everyone stakes the <b>same wager</b>, live against real players + bots.<br>
+      · You earn coins <b>only</b> by eating players — food only makes you <i>bigger</i>.<br>
+      · Hold <b>CASH OUT 10s</b> (button, touchscreen or <b>Q</b>) to bank. Release or death = lost.<br>
+      · Hold <b>BOOST</b> (button or <b>space</b>) to sprint: faster, but you drop mass pellets behind you.<br>
+      · Death = wager lost. <b>No time limit.</b><br>
+      · Big = slower. Small = fast and agile.
     </div>
     <button class="mclose" id="helpClose">close</button>
   </div>
@@ -259,7 +266,7 @@
     <div class="bal" id="rTitle" style="text-align:center">einde potje</div>
     <div class="title" id="rNum">+0</div>
     <div class="mtxt" id="rLine" style="text-align:center"></div>
-    <div class="mtxt" style="text-align:center">kills <b id="rKills">0</b> · massa <b id="rMass">0</b> · tijd <b id="rTime">0s</b> · bank <b>$:<span id="rBank">0</span></b></div>
+    <div class="mtxt" style="text-align:center">kills <b id="rKills">0</b> · mass <b id="rMass">0</b> · time <b id="rTime">0s</b> · bank <b>$:<span id="rBank">0</span></b></div>
     <button class="playbtn" id="againBtn">again</button>
   </div>
 </div>
@@ -281,8 +288,8 @@ const CFG = {
   MAX_R: 235,
 };
 const $ = id => document.getElementById(id);
-const CLIENT_V = '2.6'; // bump bij elke release — zo zien we zeker dat je de nieuwe code draait
-const fmt = n => Math.round(n).toLocaleString('nl-NL');
+const CLIENT_V = '2.7'; // bump bij elke release — zo zien we zeker dat je de nieuwe code draait
+const fmt = n => Math.round(n).toLocaleString('en-US');
 const clamp = (v,a,b)=>Math.max(a,Math.min(b,v));
 const massToR = m => clamp(Math.sqrt(m), 4, CFG.MAX_R);
 const speedFor = (mass,base)=>{ const s=base*Math.pow(CFG.START_MASS/mass,0.18); return clamp(s,105,365); }; // zelfde formule als server
@@ -381,7 +388,7 @@ function startCharge(){
 }
 function stopCharge(silent){
   if(!S) return;
-  if(S.charging&&!silent&&S.mode==='playing') feed('Cashout geannuleerd.','');
+  if(S.charging&&!silent&&S.mode==='playing') feed('Cashout cancelled.','');
   S.charging=false;
   $('cashBtn').classList.remove('charging');
   $('cashArc').style.strokeDashoffset=364.4;
@@ -400,7 +407,7 @@ function refreshMenu(){
   $('verLine').textContent='client v'+CLIENT_V;
   document.querySelectorAll('#presets button').forEach(b=>b.classList.toggle('on',b.dataset.p!=='max'&&parseInt(b.dataset.p,10)===wager));
   $('loginBtn').textContent=netUser||'login';
-  if(!$('menu').classList.contains('hidden')) loadTop(false); // top 10 bijwerken als menu zichtbaar is
+  if(!$('menu').classList.contains('hidden')) loadTop(false); // refresh top 10 when menu is visible
 }
 
 /* ---------- HUD / board / minimap ---------- */
@@ -517,7 +524,7 @@ function drawCell(c,isMe){
   ctx.fillText(c.name,c.x,c.y-c.r-fs*.5);
   if(isMe||c.remote){
     ctx.font='700 '+Math.max(11,fs*.72)+'px Inter,Segoe UI'; ctx.fillStyle=isMe?'#ffd84d':'rgba(255,255,255,.85)';
-    ctx.fillText(fmt(c.mass)+(c.isPlayer?' massa · '+fmt(c.purse)+' 🪙':' · '+fmt(c.purse)+' 🪙')+tag,c.x,c.y-c.r+Math.max(11,fs*.72)+2);
+    ctx.fillText(fmt(c.mass)+(c.isPlayer?' mass · '+fmt(c.purse)+' 🪙':' · '+fmt(c.purse)+' 🪙')+tag,c.x,c.y-c.r+Math.max(11,fs*.72)+2);
   }
 }
 
@@ -535,16 +542,16 @@ const Srv = {
     $('menu').classList.add('hidden'); $('result').classList.add('hidden');
     $('cashWrap').style.display='flex';
     $('hMode').textContent='SERVER';
-    feed('🛰️ Verbinden met <b>'+esc(url)+'</b>…','gold');
+    feed('🛰️ Connecting to <b>'+esc(url)+'</b>…','gold');
     let ws;
-    try{ ws=new WebSocket(url); }catch(e){ toast('Ongeldige server-URL'); backToLobby(true); return; }
+    try{ ws=new WebSocket(url); }catch(e){ toast('Invalid server URL'); backToLobby(true); return; }
     this.ws=ws;
     try{ ws.binaryType='arraybuffer'; }catch(e){} // binaire snapshots
     clearTimeout(this._cto);
     const myS=S;
     this._cto=setTimeout(()=>{ // nooit eindeloos zwart: na 8s zonder antwoord terug naar menu
       if(S&&S===myS&&S.playMode==='net'&&S.mode==='connecting'){
-        toast('Geen verbinding (timeout) — draait de server? Klopt de URL?');
+        toast('No connection (timeout) — is the server running? URL correct?');
         try{ ws.close(); }catch(e){}
         backToLobby(true);
       }
@@ -555,11 +562,11 @@ const Srv = {
       if(e.data&&e.data.arrayBuffer){ e.data.arrayBuffer().then(b=>applyNetBin(b)); return; } // Blob-fallback
       let m; try{ m=JSON.parse(e.data); }catch(err){ return; } this.onMsg(m);
     };
-    ws.onerror=()=>{ if(S&&S.playMode==='net'&&S.mode==='connecting'){ toast('Server niet bereikbaar — check URL / hosting'); backToLobby(true); } };
+    ws.onerror=()=>{ if(S&&S.playMode==='net'&&S.mode==='connecting'){ toast('Server unreachable — check URL / hosting'); backToLobby(true); } };
     ws.onclose=()=>{
       this.ws=null;
       if(S&&S.playMode==='net'&&S.mode==='playing'&&!S.netEnded){
-        toast('Verbinding met server verbroken');
+        toast('Lost connection to server');
         backToLobby(true);
       }
     };
@@ -571,9 +578,9 @@ const Srv = {
       $('verLine').textContent='client v'+CLIENT_V+' · server v'+(m.sv||'?');
       if(typeof m.bank==='number'){ bank=Math.round(m.bank); save(); } // server-bank is leidend
       if(m.wager){ wager=m.wager; refreshMenu();
-        feed('Server-inzet: <b>'+fmt(wager)+'</b> 🪙 (tafel — eerste speler bepaalt) · saldo <b>'+fmt(bank)+'</b> 🪙','gold'); }
-      feed('🛰️ Verbonden'+(netUser?' als <b>'+esc(netUser)+'</b>':' als gast')+' · arena vult met bots + spelers','gold');
-      feed('Cash met knop, touchscreen-hold of <kbd>Q</kbd> (10s vasthouden).','');
+        feed('Table stake: <b>'+fmt(wager)+'</b> 🪙 (first player sets it) · balance <b>'+fmt(bank)+'</b> 🪙','gold'); }
+      feed('🛰️ Connected'+(netUser?' as <b>'+esc(netUser)+'</b>':' as guest')+' · arena filling with bots + players','gold');
+      feed('Cash with button, touchscreen hold or <kbd>Q</kbd> (hold 10s).','');
       netLoop();
     }
     else if(m.t==='feed'){ feed(m.html,m.cls||''); }
@@ -590,7 +597,7 @@ const Srv = {
 };
 function startNetMatch(){
   const url=srvActiveUrl();
-  if(!url){ toast('Vul eerst een server-URL in'); $('srvUrl').focus(); return; }
+  if(!url){ toast('Enter a server URL first'); $('srvUrl').focus(); return; }
   Srv.start(url);
 }
 const TDEC=("TextDecoder" in window)?new TextDecoder():null;
@@ -757,12 +764,12 @@ function onNetEnd(m){
   const secs=Math.round((performance.now()-S.t0)/1000);
   let title,num,cls,line;
   if(typeof m.bank==='number'){ bank=Math.round(m.bank); save(); } // server-bank is leidend
-  if(m.kind==='authfail'){ toast(m.reason||'Login mislukt'); backToLobby(true); return; }
-  if(m.kind==='cash'){ title='✅ Veilig uitgecashed!'; num='+'+fmt(m.amount); cls='win';
-    line='De server bankte '+fmt(m.amount)+' 🪙 (incl. 5% fee). Inzet was '+fmt(wager)+' · kills '+m.kills+' · massa '+fmt(m.mass)+'.'; }
-  else if(m.kind==='full'){ title='🌐 Server vol'; num='±0'; cls='win'; line='De arena zit vol (max 12 spelers). Er is niks afgeschreven — probeer het zo opnieuw.'; }
-  else { title='💥 '+esc(m.killer||'—')+' at jou op!'; num='−'+fmt(wager); cls='lose';
-    line='Je verloor je inzet van '+fmt(wager)+' 🪙 (beurs was '+fmt(m.purse||0)+'). Kills: '+m.kills+'.'; }
+  if(m.kind==='authfail'){ toast(m.reason||'Login failed'); backToLobby(true); return; }
+  if(m.kind==='cash'){ title='✅ Cashed out safely!'; num='+'+fmt(m.amount); cls='win';
+    line='The server banked '+fmt(m.amount)+' 🪙 (incl. 5% fee). Stake was '+fmt(wager)+' · kills '+m.kills+' · mass '+fmt(m.mass)+'.'; }
+  else if(m.kind==='full'){ title='🌐 Server full'; num='±0'; cls='win'; line='The arena is full (max 12 players). Nothing was charged — try again soon.'; }
+  else { title='💥 '+esc(m.killer||'—')+' ate you!'; num='−'+fmt(wager); cls='lose';
+    line='You lost your stake of '+fmt(wager)+' 🪙 (purse was '+fmt(m.purse||0)+'). Kills: '+m.kills+'.'; }
   beep(m.kind==='cash'?880:160,m.kind==='cash'?.15:.4,m.kind==='cash'?'sine':'sawtooth',.12);
   $('rTitle').textContent=title; $('rNum').textContent=num; $('rNum').style.color=cls==='win'?'#5ef2b8':'#ff5a6e'; $('rLine').textContent=line;
   $('rKills').textContent=m.kills||0; $('rMass').textContent=fmt(m.mass||0); $('rTime').textContent=secs+'s'; $('rBank').textContent=fmt(bank);
@@ -774,7 +781,7 @@ function backToLobby(silent){
   try{ Srv.ws&&Srv.ws.close(); }catch(e){} Srv.ws=null;
   $('cashWrap').style.display='none';
   $('result').classList.add('hidden'); $('menu').classList.remove('hidden');
-  if(!silent) feed('Terug in de lobby.','');
+  if(!silent) feed('Back in the lobby.','');
   refreshMenu();
 }
 
@@ -782,7 +789,7 @@ function backToLobby(silent){
 let lastTop = 0;
 async function loadTop(force){
   const now = Date.now();
-  if(!force && now - lastTop < 5*60*1000) return; // max 1× per 5 min (tenzij force)
+  if(!force && now - lastTop < 5*60*1000) return; // max once per 5 min (unless forced)
   lastTop = now;
   try{
     const base = srvActiveUrl().replace(/^ws/i, 'http');
@@ -791,8 +798,8 @@ async function loadTop(force){
     const top = (j && j.top) || [];
     $('topList').innerHTML = top.length
       ? top.map((t, i) => '<li class="' + (t.n === netUser ? 'me' : '') + '"><span>' + (i + 1) + '. ' + esc(t.n) + '</span><b>$:' + fmt(t.b) + '</b></li>').join('')
-      : '<li>nog geen accounts</li>';
-    $('topAge').textContent = 'update: ' + new Date().toLocaleTimeString('nl-NL', { hour: '2-digit', minute: '2-digit' });
+      : '<li>no accounts yet</li>';
+    $('topAge').textContent = 'updated: ' + new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
   }catch(e){ $('topAge').textContent = 'server offline?'; }
 }
 setInterval(()=>{ if(!$('menu').classList.contains('hidden')) loadTop(true); }, 5*60*1000);
@@ -800,10 +807,10 @@ function syncWager(v){ wager=clamp(Math.round(Number(v)||10),10,Math.max(10,bank
 $('wMinus').onclick=()=>syncWager(wager-(wager>=200?50:10));
 $('wPlus').onclick=()=>syncWager(wager+(wager>=200?50:10));
 document.querySelectorAll('#presets button').forEach(b=>b.onclick=()=>{
-  if(b.dataset.p==='max'){ if(bank<10){ toast('Geen saldo voor MAX'); return; } syncWager(bank); }
+  if(b.dataset.p==='max'){ if(bank<10){ toast('No balance for MAX'); return; } syncWager(bank); }
   else syncWager(parseInt(b.dataset.p,10));
 });
-$('srvReset').onclick=()=>{ srvDirty=false; localStorage.setItem('nova_srv',DEFAULT_SRV); $('srvUrl').value=AUTO_SRV||DEFAULT_SRV; toast('Server-URL gereset'); };
+$('srvReset').onclick=()=>{ srvDirty=false; localStorage.setItem('nova_srv',DEFAULT_SRV); $('srvUrl').value=AUTO_SRV||DEFAULT_SRV; toast('Server URL reset'); };
 $('srvUrl').addEventListener('input',()=>{ srvDirty=true; });
 $('startBtn').onclick=()=>{ try{AC=AC||new (window.AudioContext||window.webkitAudioContext)();}catch(e){} startNetMatch(); };
 $('againBtn').onclick=()=>{ $('result').classList.add('hidden'); $('menu').classList.remove('hidden'); refreshMenu(); };
@@ -814,7 +821,7 @@ const closeModal=id=>$(id).classList.add('hidden');
 $('loginBtn').onclick=()=>{ authModalMode='login'; $('authTitle').textContent='login'; $('authMsg').textContent=''; $('authUser').value=netUser||''; openModal('authModal'); };
 $('signinBtn').onclick=()=>{ authModalMode='register'; $('authTitle').textContent='signin'; $('authMsg').textContent=''; $('authUser').value=netUser||''; openModal('authModal'); };
 $('authClose').onclick=()=>closeModal('authModal');
-$('shopBtn').onclick=()=>{ $('shopMsg').textContent='gratis coins · max 1× per 5 min · prototype, geen echt geld'; refreshMenu(); openModal('shopModal'); };
+$('shopBtn').onclick=()=>{ $('shopMsg').textContent='free coins · max once per 5 min · prototype, no real money'; refreshMenu(); openModal('shopModal'); };
 $('shopClose').onclick=()=>closeModal('shopModal');
 $('helpBtn').onclick=()=>openModal('helpModal');
 $('helpClose').onclick=()=>closeModal('helpModal');
@@ -826,7 +833,7 @@ function srvActiveUrl(){
 }
 function srvOnce(msg,cb){
   const url=srvActiveUrl();
-  let ws; try{ ws=new WebSocket(url); }catch(e){ toast('Ongeldige server-URL'); return; }
+  let ws; try{ ws=new WebSocket(url); }catch(e){ toast('Invalid server URL'); return; }
   const to=setTimeout(()=>{ try{ws.close();}catch(e){} toast('Server reageert niet'); },9000);
   ws.onopen=()=>{ try{ ws.send(JSON.stringify(msg)); }catch(e){} };
   ws.onmessage=e=>{ let m; try{ m=JSON.parse(e.data); }catch(err){ return; }
@@ -835,21 +842,21 @@ function srvOnce(msg,cb){
 }
 $('authGo').onclick=()=>{
   const u=($('authUser').value||'').trim(), p=$('authPass').value||'';
-  if(!/^[A-Za-z0-9_.-]{3,16}$/.test(u)){ $('authMsg').textContent='naam: 3-16 tekens'; return; }
-  if(p.length<4){ $('authMsg').textContent='wachtwoord min 4 tekens'; return; }
+  if(!/^[A-Za-z0-9_.-]{3,16}$/.test(u)){ $('authMsg').textContent='name: 3-16 chars'; return; }
+  if(p.length<4){ $('authMsg').textContent='password min 4 chars'; return; }
   $('authMsg').textContent='…';
   srvOnce({t:'auth',user:u,pass:p,mode:authModalMode},m=>{
     if(m.ok){ netUser=u; netPass=p; localStorage.setItem('nova_user',u); localStorage.setItem('nova_pass',p);
-      bank=Math.round(m.bank); save(); refreshMenu(); closeModal('authModal'); toast(authModalMode==='register'?'Account gemaakt: '+u:'Ingelogd als '+u); }
-    else $('authMsg').textContent=m.reason||'mislukt';
+      bank=Math.round(m.bank); save(); refreshMenu(); closeModal('authModal'); toast(authModalMode==='register'?'Account created: '+u:'Logged in as '+u); }
+    else $('authMsg').textContent=m.reason||'failed';
   });
 };
 $('claimBtn').onclick=()=>{
-  if(!netUser||!netPass){ $('shopMsg').textContent='login eerst via het menu'; return; }
+  if(!netUser||!netPass){ $('shopMsg').textContent='login first via the menu'; return; }
   $('shopMsg').textContent='…';
   srvOnce({t:'claim',user:netUser,pass:netPass},m=>{
-    if(m.ok){ bank=Math.round(m.bank); save(); refreshMenu(); $('shopMsg').textContent='+500 bijgeschreven! saldo $:'+fmt(bank); }
-    else $('shopMsg').textContent=m.reason||'mislukt';
+    if(m.ok){ bank=Math.round(m.bank); save(); refreshMenu(); $('shopMsg').textContent='+500 credited! balance $:'+fmt(bank); }
+    else $('shopMsg').textContent=m.reason||'failed';
   });
 };
 const cb=$('cashBtn');
@@ -864,11 +871,11 @@ bb.addEventListener('pointerdown',boostOn);
 bb.addEventListener('contextmenu',e=>e.preventDefault());
 addEventListener('keydown',e=>{
   const tag=(e.target&&e.target.tagName)||'';
-  if(tag==='INPUT'||tag==='SELECT'||tag==='TEXTAREA') return; // niet cashen tijdens typen
+  if(tag==='INPUT'||tag==='SELECT'||tag==='TEXTAREA') return; // don't trigger while typing
   const k=e.key.toLowerCase();
-  if((k==='q'||k==='c')&&!e.repeat) startCharge(); // Q = cash op pc (C blijft als alias)
-  if(k==='p'&&!e.repeat){ if(S){ S.dbg=(S.dbg===false); } toast(S&&S.dbg===false?'debug uit':'debug aan'); }
-  if(k===' '&&!e.repeat){ e.preventDefault(); if(S) S.boosting=true; $('boostBtn').classList.add('on'); } // spatie = boost
+  if((k==='q'||k==='c')&&!e.repeat) startCharge(); // Q = cash on pc (C stays as alias)
+  if(k==='p'&&!e.repeat){ if(S){ S.dbg=(S.dbg===false); } toast(S&&S.dbg===false?'debug off':'debug on'); }
+  if(k===' '&&!e.repeat){ e.preventDefault(); if(S) S.boosting=true; $('boostBtn').classList.add('on'); } // space = boost
 });
 addEventListener('keyup',e=>{
   const k=e.key.toLowerCase();
