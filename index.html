@@ -52,6 +52,12 @@
   #cashBtn .tmr{font-size:12px;color:#fff;min-height:16px;font-variant-numeric:tabular-nums}
   #cashBtn.charging{border-color:#ffe98a;background:radial-gradient(circle at 32% 28%,#6b5514,#3a2f08 70%);box-shadow:0 0 34px rgba(255,216,77,.45)}
   #cashHint{font-size:11px;color:var(--dim);background:rgba(0,0,0,.5);padding:5px 10px;border-radius:999px;max-width:190px;text-align:center}
+  #boostBtn{width:92px;height:92px;border-radius:50%;border:3px solid #ff9f43;background:radial-gradient(circle at 32% 28%,#4a2c14,#1d1108 70%);color:#ff9f43;font-family:'Press Start 2P',monospace;font-size:10px;cursor:pointer;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;touch-action:none;user-select:none;-webkit-user-select:none;text-shadow:1px 1px 0 #000}
+  #boostBtn span{font-size:7px;color:var(--dim)}
+  #boostBtn.on{box-shadow:0 0 26px rgba(255,159,67,.7);border-color:#ffd0a0}
+  /* top-10 aan de linkerkant van het startscherm */
+  #topCard{position:fixed;left:16px;top:50%;transform:translateY(-50%);z-index:31;width:240px;background:#1a2342;border:1px solid rgba(255,255,255,.08);border-radius:18px;padding:16px;display:flex;flex-direction:column;gap:10px;box-shadow:0 20px 60px rgba(0,0,0,.5)}
+  @media(max-width:920px){ #topCard{display:none} }
   #dbg{position:fixed;top:64px;left:50%;transform:translateX(-50%);z-index:10;pointer-events:none;font-family:monospace;font-size:11px;color:#8f9;text-shadow:1px 1px 0 #000;background:rgba(0,0,0,.45);padding:4px 10px;border-radius:8px;white-space:nowrap}
   /* ---------- multiplayer / inputs ---------- */
   #cashWrap2{position:fixed;left:16px;bottom:170px;z-index:12;display:none;flex-direction:column;align-items:center;gap:8px}
@@ -176,6 +182,7 @@
 <canvas id="mini" width="150" height="150"></canvas>
 
 <div id="cashWrap">
+  <button id="boostBtn">BOOST<span>hold / spatie</span></button>
   <div id="cashRing">
     <svg width="132" height="132"><circle cx="66" cy="66" r="58" fill="none" stroke="#232c55" stroke-width="9"/><circle id="cashArc" cx="66" cy="66" r="58" fill="none" stroke="#ffd84d" stroke-width="9" stroke-linecap="round" stroke-dasharray="364.4" stroke-dashoffset="364.4"/></svg>
     <button id="cashBtn"><small>CASH OUT</small><span class="amt" id="cashAmt">0</span><span class="tmr" id="cashTmr">HOLD 10s</span></button>
@@ -196,14 +203,14 @@
       <button data-p="50">50</button><button data-p="100">100</button><button data-p="250">250</button><button data-p="1000">1000</button><button data-p="max">MAX</button>
     </div>
     <button class="playbtn" id="startBtn">play</button>
-    <div class="mcard" style="gap:8px;padding:16px 18px">
-      <div class="title" style="font-size:13px;margin:0">top 10 rijkste</div>
-      <ol id="topList" class="toplist"><li>laden…</li></ol>
-      <div class="mtxt" id="topAge" style="text-align:center;font-size:10px;min-height:14px"></div>
-    </div>
     <div class="mfoot"><button class="icobtn" id="shopBtn">🛒</button><button class="icobtn" id="helpBtn">?</button></div>
     <div class="srvmini"><input id="srvUrl" type="text" inputmode="url" spellcheck="false" placeholder="wss://..."><button class="abtn" id="srvReset" title="standaardserver">↺</button></div>
     <div class="mtxt" id="verLine" style="text-align:center;font-size:10px;min-height:14px"></div>
+  </div>
+  <div id="topCard">
+    <div class="title" style="font-size:13px;margin:0">top 10 rijkste</div>
+    <ol id="topList" class="toplist"><li>laden…</li></ol>
+    <div class="mtxt" id="topAge" style="text-align:center;font-size:10px;min-height:14px"></div>
   </div>
 </div>
 
@@ -238,6 +245,7 @@
       · Iedereen zet <b>dezelfde inzet</b> in, live tegen echte spelers + bots.<br>
       · Coins krijg je <b>alleen</b> door spelers op te eten — voer maakt je alleen <i>groter</i>.<br>
       · Houd <b>CASH OUT 10s</b> vast (knop, touchscreen of <b>Q</b>) om te banken. Loslaten of dood = weg.<br>
+      · Houd <b>BOOST</b> vast (knop of <b>spatie</b>) om te spurten: sneller, maar je verliest massa als bolletjes achter je.<br>
       · Dood = inzet kwijt. <b>Geen tijdslimiet.</b><br>
       · Groot = trager. Klein = snel en wendbaar.
     </div>
@@ -273,7 +281,7 @@ const CFG = {
   MAX_R: 235,
 };
 const $ = id => document.getElementById(id);
-const CLIENT_V = '2.5'; // bump bij elke release — zo zien we zeker dat je de nieuwe code draait
+const CLIENT_V = '2.6'; // bump bij elke release — zo zien we zeker dat je de nieuwe code draait
 const fmt = n => Math.round(n).toLocaleString('nl-NL');
 const clamp = (v,a,b)=>Math.max(a,Math.min(b,v));
 const massToR = m => clamp(Math.sqrt(m), 4, CFG.MAX_R);
@@ -577,7 +585,7 @@ const Srv = {
     const now=performance.now();
     if(now-this.lastInput<33) return; // 30×/s input = directere besturing
     this.lastInput=now;
-    try{ this.ws.send(JSON.stringify({t:'input',x:Math.round(wx),y:Math.round(wy),c:c?1:0})); }catch(e){}
+    try{ this.ws.send(JSON.stringify({t:'input',x:Math.round(wx),y:Math.round(wy),c:c?1:0,b:(S&&S.boosting)?1:0})); }catch(e){}
   }
 };
 function startNetMatch(){
@@ -711,11 +719,14 @@ function netLoop(){
     const dtS=Math.min(.05,(now-(S.snapT||now))/1000);
     S.snapT=now;
     const ang=Math.atan2(wy-P.y,wx-P.x);
-    const sp=speedFor(P.mass,355)*(S.charging?0.92:1);
+    const boosting=S.boosting&&P.mass>200;
+    const sp=speedFor(P.mass,355)*(S.charging?0.92:1)*(boosting?1.55:1);
     const dist=Math.hypot(wx-P.x,wy-P.y), tv=dist<10?0:sp;
     const kk=Math.min(1,dtS*6);
     P.vx+=(Math.cos(ang)*tv-P.vx)*kk; P.vy+=(Math.sin(ang)*tv-P.vy)*kk;
     P.x=clamp(P.x+P.vx*dtS,P.r,CFG.WORLD-P.r); P.y=clamp(P.y+P.vy*dtS,P.r,CFG.WORLD-P.r);
+    if(boosting){ P.mass*=(1-0.045*dtS); P.boostT=(P.boostT||0)+dtS;
+      if(P.boostT>=0.12){ P.boostT=0; P.mass=Math.max(60,P.mass-22); } }
     // anderen dempen naar hun doel: framerate-vloeiend en ongevoelig voor timing-haperingen
     // (geen intervallen/delays meer die stuk kunnen gaan — convergeert altijd)
     const damp=Math.min(1,dtS*10);
@@ -845,16 +856,24 @@ const cb=$('cashBtn');
 cb.addEventListener('pointerdown',e=>{e.preventDefault();cb.setPointerCapture&&cb.setPointerCapture(e.pointerId);startCharge();});
 ['pointerup','pointercancel'].forEach(ev=>cb.addEventListener(ev,e=>{ if(S&&S.charging&&S.mode==='playing') stopCharge(false); }));
 cb.addEventListener('contextmenu',e=>e.preventDefault());
+const bb=$('boostBtn');
+const boostOn=e=>{ if(e) e.preventDefault(); if(S) S.boosting=true; bb.classList.add('on'); };
+const boostOff=()=>{ if(S) S.boosting=false; bb.classList.remove('on'); };
+bb.addEventListener('pointerdown',boostOn);
+['pointerup','pointercancel','pointerleave'].forEach(ev=>bb.addEventListener(ev,boostOff));
+bb.addEventListener('contextmenu',e=>e.preventDefault());
 addEventListener('keydown',e=>{
   const tag=(e.target&&e.target.tagName)||'';
   if(tag==='INPUT'||tag==='SELECT'||tag==='TEXTAREA') return; // niet cashen tijdens typen
   const k=e.key.toLowerCase();
   if((k==='q'||k==='c')&&!e.repeat) startCharge(); // Q = cash op pc (C blijft als alias)
   if(k==='p'&&!e.repeat){ if(S){ S.dbg=(S.dbg===false); } toast(S&&S.dbg===false?'debug uit':'debug aan'); }
+  if(k===' '&&!e.repeat){ e.preventDefault(); if(S) S.boosting=true; $('boostBtn').classList.add('on'); } // spatie = boost
 });
 addEventListener('keyup',e=>{
   const k=e.key.toLowerCase();
   if(k==='q'||k==='c'){ if(S&&S.charging&&S.mode==='playing') stopCharge(false); }
+  if(k===' '){ if(S) S.boosting=false; $('boostBtn').classList.remove('on'); }
 });
 
 refreshMenu();

@@ -14,7 +14,7 @@ const crypto = require("crypto");
 const { WebSocketServer } = require("ws");
 
 const PORT = process.env.PORT || 3000;
-const SERVER_V = '2.5'; // bump mee met client
+const SERVER_V = '2.6'; // bump mee met client
 const WORLD = 5500, EAT = 1.15, CASHOUT = 10, RAKE = 0.05;
 const START_MASS = 430, MAX_R = 235, FOOD_TARGET = 1000, ARENA_SIZE = 40;
 const MAX_PLAYERS = 12, TICK_MS = 50, SNAP_MS = Math.round(1000 / (Number(process.env.SNAP_HZ) || 20)); // hoger = smoother (10 = zuinig, 20 = standaard)
@@ -258,7 +258,7 @@ function tick() {
     if (p.done || !p.cell.alive) continue;
     const c = p.cell;
     const ang = Math.atan2(p.input.y - c.y, p.input.x - c.x);
-    const sp = speedFor(c.mass, 355) * (p.input.c ? 0.92 : 1); // speler iets sneller → bots wel te vangen
+    const sp = speedFor(c.mass, 355) * (p.input.c ? 0.92 : 1) * (p.input.b && c.mass > 200 ? 1.55 : 1); // boost = sneller tegen massa
     const dist = Math.hypot(p.input.x - c.x, p.input.y - c.y);
     const tv = dist < 10 ? 0 : sp;
     c.vx += (Math.cos(ang) * tv - c.vx) * Math.min(1, dt * 6);
@@ -271,6 +271,19 @@ function tick() {
       p.chargeEl += dt;
       if (p.chargeEl >= CASHOUT) return cashOut(id);
     } else p.chargeEl = 0;
+    // boosten: massa eraf, bolletjes erachter (slither-style)
+    if (p.input.b && c.mass > 200) {
+      p.boostT = (p.boostT || 0) + dt;
+      c.mass *= (1 - 0.045 * dt);
+      if (p.boostT >= 0.12) {
+        p.boostT = 0;
+        c.mass = Math.max(60, c.mass - 22);
+        const ang = Math.atan2(c.vy, c.vx);
+        const bx = clamp(c.x - Math.cos(ang) * (c.r + 12), 20, WORLD - 20);
+        const by = clamp(c.y - Math.sin(ang) * (c.r + 12), 20, WORLD - 20);
+        if (G.foods.length < FOOD_TARGET + 300) G.foods.push({ x: bx, y: by, mass: 16, color: FOODPAL[(Math.random() * FOODPAL.length) | 0] });
+      }
+    } else p.boostT = 0;
   }
   // bots
   for (const b of G.bots) {
@@ -548,6 +561,7 @@ wss.on("connection", (ws) => {
       p.input.x = clamp(Number(m.x) || p.cell.x, 0, WORLD);
       p.input.y = clamp(Number(m.y) || p.cell.y, 0, WORLD);
       p.input.c = !!m.c;
+      p.input.b = !!m.b;
     }
   });
   ws.on("close", () => {
