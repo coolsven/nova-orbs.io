@@ -625,8 +625,8 @@ function netLoop(){
     P.x+=P.vx*dtS; P.y+=P.vy*dtS;
     const seg=Math.max(1,(S.snapB||now)-(S.snapA||now));
     const avg=S.snapAvg||seg;
-    const dynDelay=clamp(avg*1.1+(S.snapJit||0)*1.5,40,160);
-    const al=clamp((now-dynDelay-(S.snapA||now))/seg,0,1.6); // tot 1.6: bij haperingen doorbewegen i.p.v. bevriezen
+    const dynDelay=clamp(avg,30,120); // exact ±1 interval achter: vloeiend, nooit voorbij het doel
+    const al=clamp((now-dynDelay-(S.snapA||now))/seg,0,1); // nooit >1 = nooit uit het frame vliegen
     for(const b of S.bots){ b.x=b.ox+(b.tx-b.ox)*al; b.y=b.oy+(b.ty-b.oy)*al; }
     for(const r of S.remotes){ r.x=r.ox+(r.tx-r.ox)*al; r.y=r.oy+(r.ty-r.oy)*al; }
     // cashout-ring volgt de server-timer (authoritatief)
