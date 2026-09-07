@@ -264,7 +264,7 @@ const CFG = {
   MAX_R: 235,
 };
 const $ = id => document.getElementById(id);
-const CLIENT_V = '2.3'; // bump bij elke release — zo zien we zeker dat je de nieuwe code draait
+const CLIENT_V = '2.4'; // bump bij elke release — zo zien we zeker dat je de nieuwe code draait
 const fmt = n => Math.round(n).toLocaleString('nl-NL');
 const clamp = (v,a,b)=>Math.max(a,Math.min(b,v));
 const massToR = m => clamp(Math.sqrt(m), 4, CFG.MAX_R);
@@ -701,7 +701,7 @@ function netLoop(){
     const dtS=Math.min(.05,(now-(S.snapT||now))/1000);
     S.snapT=now;
     const ang=Math.atan2(wy-P.y,wx-P.x);
-    const sp=speedFor(P.mass,335)*(S.charging?0.92:1);
+    const sp=speedFor(P.mass,355)*(S.charging?0.92:1);
     const dist=Math.hypot(wx-P.x,wy-P.y), tv=dist<10?0:sp;
     const kk=Math.min(1,dtS*6);
     P.vx+=(Math.cos(ang)*tv-P.vx)*kk; P.vy+=(Math.sin(ang)*tv-P.vy)*kk;

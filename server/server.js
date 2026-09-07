@@ -14,7 +14,7 @@ const crypto = require("crypto");
 const { WebSocketServer } = require("ws");
 
 const PORT = process.env.PORT || 3000;
-const SERVER_V = '2.0'; // bump mee met client
+const SERVER_V = '2.4'; // bump mee met client
 const WORLD = 5500, EAT = 1.15, CASHOUT = 10, RAKE = 0.05;
 const START_MASS = 430, MAX_R = 235, FOOD_TARGET = 1000, ARENA_SIZE = 40;
 const MAX_PLAYERS = 12, TICK_MS = 50, SNAP_MS = Math.round(1000 / (Number(process.env.SNAP_HZ) || 20)); // hoger = smoother (10 = zuinig, 20 = standaard)
@@ -52,7 +52,7 @@ function validUser(u) { return /^[A-Za-z0-9_.-]{3,16}$/.test(u); }
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const rand = (a, b) => a + Math.random() * (b - a);
 const rr = (m) => clamp(Math.sqrt(m), 4, MAX_R);
-const gainEff = (mass) => 1 / (1 + Math.pow(mass / 2600, 0.7));
+const gainEff = (mass) => 1 / (1 + Math.pow(mass / 3200, 0.7)); // groter groeien duurt langer, maar cap ligt hoger
 const speedFor = (mass, base) => clamp(base * Math.pow(START_MASS / mass, 0.18), 105, 365);
 
 const TYPES = {
@@ -258,14 +258,14 @@ function tick() {
     if (p.done || !p.cell.alive) continue;
     const c = p.cell;
     const ang = Math.atan2(p.input.y - c.y, p.input.x - c.x);
-    const sp = speedFor(c.mass, 335) * (p.input.c ? 0.92 : 1);
+    const sp = speedFor(c.mass, 355) * (p.input.c ? 0.92 : 1); // speler iets sneller → bots wel te vangen
     const dist = Math.hypot(p.input.x - c.x, p.input.y - c.y);
     const tv = dist < 10 ? 0 : sp;
     c.vx += (Math.cos(ang) * tv - c.vx) * Math.min(1, dt * 6);
     c.vy += (Math.sin(ang) * tv - c.vy) * Math.min(1, dt * 6);
     c.x = clamp(c.x + c.vx * dt, c.r, WORLD - c.r);
     c.y = clamp(c.y + c.vy * dt, c.r, WORLD - c.r);
-    if (c.mass > 3200) c.mass -= c.mass * 0.012 * dt * (c.mass / 3200);
+    if (c.mass > 8000) c.mass -= c.mass * 0.012 * dt * (c.mass / 8000); // decay pas bij echt groot
     c.mass = Math.max(60, c.mass); c.r = rr(c.mass);
     if (p.input.c) {
       p.chargeEl += dt;
@@ -276,7 +276,7 @@ function tick() {
   for (const b of G.bots) {
     if (!b.alive) continue;
     think(b, now, cells, charging); steer(b, dt);
-    if (b.mass > 3200) b.mass -= b.mass * 0.012 * dt * (b.mass / 3200);
+    if (b.mass > 8000) b.mass -= b.mass * 0.012 * dt * (b.mass / 8000);
     b.mass = Math.max(60, b.mass); b.r = rr(b.mass);
   }
   // voer eten (grid) + aanvullen
