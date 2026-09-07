@@ -14,7 +14,7 @@ const crypto = require("crypto");
 const { WebSocketServer } = require("ws");
 
 const PORT = process.env.PORT || 3000;
-const SERVER_V = '2.4'; // bump mee met client
+const SERVER_V = '2.5'; // bump mee met client
 const WORLD = 5500, EAT = 1.15, CASHOUT = 10, RAKE = 0.05;
 const START_MASS = 430, MAX_R = 235, FOOD_TARGET = 1000, ARENA_SIZE = 40;
 const MAX_PLAYERS = 12, TICK_MS = 50, SNAP_MS = Math.round(1000 / (Number(process.env.SNAP_HZ) || 20)); // hoger = smoother (10 = zuinig, 20 = standaard)
@@ -481,6 +481,14 @@ setInterval(() => {
 const ROOT = path.join(__dirname, "..");
 const server = http.createServer((req, res) => {
   if (req.url === "/health") { res.writeHead(200); res.end("ok"); return; }
+  if (req.url === "/top") { // top 10 rijkste accounts (voor leaderboard op het beginscherm)
+    const top = Object.entries(ACC).map(([n, a]) => ({ n, b: Math.round((a && a.bank) || 0) }))
+      .sort((a, b) => b.b - a.b).slice(0, 10);
+    res.writeHead(200, { "Content-Type": "application/json; charset=utf-8",
+      "Access-Control-Allow-Origin": "*", "Cache-Control": "no-store" });
+    res.end(JSON.stringify({ top }));
+    return;
+  }
   let file = req.url === "/" ? "/index.html" : req.url.split("?")[0];
   const fp = path.normalize(path.join(ROOT, file));
   if (!fp.startsWith(ROOT) || !fp.endsWith(".html")) { res.writeHead(404); res.end("not found"); return; }

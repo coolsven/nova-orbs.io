@@ -140,6 +140,10 @@
   .mclose{background:transparent;border:none;color:var(--dim);font-family:'Press Start 2P',monospace;font-size:10px;cursor:pointer;padding:8px}
   .mtxt{font-size:13px;line-height:1.8;color:#c4cbe8;text-align:left}
   .mtxt b{color:var(--gold)} .mtxt i{color:var(--mint);font-style:normal;font-weight:700}
+  .toplist{list-style:none;display:flex;flex-direction:column;gap:5px;font-family:'Press Start 2P',monospace;font-size:10px}
+  .toplist li{display:flex;justify-content:space-between;gap:10px;color:#c4cbe8;text-shadow:1px 1px 0 #000}
+  .toplist li b{color:var(--gold)}
+  .toplist li.me{color:var(--mint)}
   @media(max-width:760px){ #board{display:none} #mini{width:110px;height:110px} .statGrid{grid-template-columns:repeat(2,1fr)} }
 </style>
 </head>
@@ -192,6 +196,11 @@
       <button data-p="50">50</button><button data-p="100">100</button><button data-p="250">250</button><button data-p="1000">1000</button><button data-p="max">MAX</button>
     </div>
     <button class="playbtn" id="startBtn">play</button>
+    <div class="mcard" style="gap:8px;padding:16px 18px">
+      <div class="title" style="font-size:13px;margin:0">top 10 rijkste</div>
+      <ol id="topList" class="toplist"><li>laden…</li></ol>
+      <div class="mtxt" id="topAge" style="text-align:center;font-size:10px;min-height:14px"></div>
+    </div>
     <div class="mfoot"><button class="icobtn" id="shopBtn">🛒</button><button class="icobtn" id="helpBtn">?</button></div>
     <div class="srvmini"><input id="srvUrl" type="text" inputmode="url" spellcheck="false" placeholder="wss://..."><button class="abtn" id="srvReset" title="standaardserver">↺</button></div>
     <div class="mtxt" id="verLine" style="text-align:center;font-size:10px;min-height:14px"></div>
@@ -264,7 +273,7 @@ const CFG = {
   MAX_R: 235,
 };
 const $ = id => document.getElementById(id);
-const CLIENT_V = '2.4'; // bump bij elke release — zo zien we zeker dat je de nieuwe code draait
+const CLIENT_V = '2.5'; // bump bij elke release — zo zien we zeker dat je de nieuwe code draait
 const fmt = n => Math.round(n).toLocaleString('nl-NL');
 const clamp = (v,a,b)=>Math.max(a,Math.min(b,v));
 const massToR = m => clamp(Math.sqrt(m), 4, CFG.MAX_R);
@@ -383,6 +392,7 @@ function refreshMenu(){
   $('verLine').textContent='client v'+CLIENT_V;
   document.querySelectorAll('#presets button').forEach(b=>b.classList.toggle('on',b.dataset.p!=='max'&&parseInt(b.dataset.p,10)===wager));
   $('loginBtn').textContent=netUser||'login';
+  if(!$('menu').classList.contains('hidden')) loadTop(false); // top 10 bijwerken als menu zichtbaar is
 }
 
 /* ---------- HUD / board / minimap ---------- */
@@ -757,7 +767,24 @@ function backToLobby(silent){
   refreshMenu();
 }
 
-/* ---------- wiring ---------- */
+/* ---------- top 10 rijkste (elke 5 min verversen) ---------- */
+let lastTop = 0;
+async function loadTop(force){
+  const now = Date.now();
+  if(!force && now - lastTop < 5*60*1000) return; // max 1× per 5 min (tenzij force)
+  lastTop = now;
+  try{
+    const base = srvActiveUrl().replace(/^ws/i, 'http');
+    const r = await fetch(base + '/top', { headers: { 'ngrok-skip-browser-warning': 'true' } });
+    const j = await r.json();
+    const top = (j && j.top) || [];
+    $('topList').innerHTML = top.length
+      ? top.map((t, i) => '<li class="' + (t.n === netUser ? 'me' : '') + '"><span>' + (i + 1) + '. ' + esc(t.n) + '</span><b>$:' + fmt(t.b) + '</b></li>').join('')
+      : '<li>nog geen accounts</li>';
+    $('topAge').textContent = 'update: ' + new Date().toLocaleTimeString('nl-NL', { hour: '2-digit', minute: '2-digit' });
+  }catch(e){ $('topAge').textContent = 'server offline?'; }
+}
+setInterval(()=>{ if(!$('menu').classList.contains('hidden')) loadTop(true); }, 5*60*1000);
 function syncWager(v){ wager=clamp(Math.round(Number(v)||10),10,Math.max(10,bank)); refreshMenu(); }
 $('wMinus').onclick=()=>syncWager(wager-(wager>=200?50:10));
 $('wPlus').onclick=()=>syncWager(wager+(wager>=200?50:10));
