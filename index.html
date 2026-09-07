@@ -264,7 +264,7 @@ const CFG = {
   MAX_R: 235,
 };
 const $ = id => document.getElementById(id);
-const CLIENT_V = '1.9'; // bump bij elke release — zo zien we zeker dat je de nieuwe code draait
+const CLIENT_V = '2.0'; // bump bij elke release — zo zien we zeker dat je de nieuwe code draait
 const fmt = n => Math.round(n).toLocaleString('nl-NL');
 const clamp = (v,a,b)=>Math.max(a,Math.min(b,v));
 const massToR = m => clamp(Math.sqrt(m), 4, CFG.MAX_R);
@@ -460,6 +460,15 @@ const Srv = {
     try{ ws=new WebSocket(url); }catch(e){ toast('Ongeldige server-URL'); backToLobby(true); return; }
     this.ws=ws;
     try{ ws.binaryType='arraybuffer'; }catch(e){} // binaire snapshots
+    clearTimeout(this._cto);
+    const myS=S;
+    this._cto=setTimeout(()=>{ // nooit eindeloos zwart: na 8s zonder antwoord terug naar menu
+      if(S&&S===myS&&S.playMode==='net'&&S.mode==='connecting'){
+        toast('Geen verbinding (timeout) — draait de server? Klopt de URL?');
+        try{ ws.close(); }catch(e){}
+        backToLobby(true);
+      }
+    },8000);
     ws.onopen=()=>{ try{ ws.send(JSON.stringify({t:'join',wager,user:netUser,pass:netPass,mode:'login'})); }catch(e){} };
     ws.onmessage=(e)=>{
       if(e.data instanceof ArrayBuffer){ applyNetBin(e.data); return; } // binair spelverkeer
@@ -478,6 +487,7 @@ const Srv = {
   onMsg(m){
     if(!S||S.playMode!=='net') return;
     if(m.t==='welcome'){ S.mode='playing'; S.last=performance.now();
+      clearTimeout(Srv._cto);
       $('verLine').textContent='client v'+CLIENT_V+' · server v'+(m.sv||'?');
       if(typeof m.bank==='number'){ bank=Math.round(m.bank); save(); } // server-bank is leidend
       if(m.wager){ wager=m.wager; refreshMenu();
@@ -488,7 +498,7 @@ const Srv = {
     }
     else if(m.t==='feed'){ feed(m.html,m.cls||''); }
     else if(m.t==='end'){ onNetEnd(m); }
-    else if(m.t==='pong'){ Srv.ms=Math.max(0,Math.round(performance.now()-m.t)); $('hMode').textContent='SERVER · '+Srv.ms+'ms'; }
+    else if(m.t==='pong'&&typeof m.ts==='number'){ Srv.ms=Math.max(0,Math.round(performance.now()-m.ts)); $('hMode').textContent='SERVER · '+Srv.ms+'ms'; }
   },
   sendInput(wx,wy,c){
     if(!this.ws||this.ws.readyState!==1) return;

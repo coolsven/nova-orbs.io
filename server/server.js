@@ -14,7 +14,7 @@ const crypto = require("crypto");
 const { WebSocketServer } = require("ws");
 
 const PORT = process.env.PORT || 3000;
-const SERVER_V = '1.9'; // bump mee met client
+const SERVER_V = '2.0'; // bump mee met client
 const WORLD = 5500, EAT = 1.15, CASHOUT = 10, RAKE = 0.05;
 const START_MASS = 430, MAX_R = 235, FOOD_TARGET = 1000, ARENA_SIZE = 40;
 const MAX_PLAYERS = 12, TICK_MS = 50, SNAP_MS = Math.round(1000 / (Number(process.env.SNAP_HZ) || 20)); // hoger = smoother (10 = zuinig, 20 = standaard)
@@ -115,66 +115,94 @@ let feedQueue = []; // {html, cls} -> broadcast naar alle clients
 function feed(html, cls) { feedQueue.push({ html, cls: cls || "" }); if (feedQueue.length > 20) feedQueue.shift(); }
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 
-/* ---------- bot AI (zelfde 6 types als client) ---------- */
+/* ---------- bot AI: kracht-vectoren (vloeiend sturen zoals echte .io-servers) ----------
+   Alle 6 types blijven, maar i.p.v. abrupt wisselen tussen doelen tellen alle
+   invloeden mee, gewogen naar afstand — daardoor geen schokkerige bochten meer. */
 function think(b, now, cells, chargingHumans) {
   if (now < b.nextThink) return;
   const T = TYPES[b.type];
   b.nextThink = now + rand(b.react[0], b.react[1]) / Math.max(0.5, b.skill);
-  let danger = null, dd = 1e9, prey = null, pd = 1e9, weakest = null, wm = 1e9;
+  if (b.type === "random" && now > b.modeUntil) { // onvoorspelbaar: wissel gewichten
+    b.rm = { flee: rand(0, 2), hunt: rand(0, 2), food: rand(0, 2) };
+    b.modeUntil = now + rand(1500, 4500);
+  }
+  const rm = b.rm || { flee: 1, hunt: 1, food: 1 };
+  let fx = 0, fy = 0, mode = "graze", fleeF = 0, huntF = 0;
+  const push = (tx, ty, w) => { // kracht ~ gewicht/afstand richting doel
+    const dx = tx - b.x, dy = ty - b.y, d = Math.hypot(dx, dy);
+    if (d < 1) return 0;
+    const f = (w / Math.max(60, d)) * 100;
+    fx += (dx / d) * f; fy += (dy / d) * f;
+    return Math.abs(f);
+  };
+  // 1) gevaar stoot af (dichtbij telt zwaarder)
+  const fleeMul = (b.type === "defensive" ? 2.2 : b.type === "farmer" ? 1.6 : 1.0) * rm.flee;
   for (const e of cells) {
     if (e === b || !e.alive) continue;
     const d = Math.hypot(e.x - b.x, e.y - b.y);
-    const mis = Math.random() < b.err * 0.15;
-    if (e.mass > b.mass * EAT && !mis && d < dd && d < b.fleeR) { dd = d; danger = e; }
-    if (b.mass > e.mass * EAT && !mis && d < pd && d < b.chaseR) { pd = d; prey = e; }
-    if (e.mass < wm) { wm = e.mass; weakest = e; }
-  }
-  let tx = b.x, ty = b.y, mode = "graze";
-  const R = Math.random();
-  if (b.type === "random" && now > b.modeUntil) {
-    b.mode = ["flee", "graze", "hunt", "wander"][(Math.random() * 4) | 0];
-    b.modeUntil = now + rand(1500, 4500);
-  }
-  if (danger && (R < T.risk + 0.55 || b.type === "defensive" || (b.type === "random" && b.mode === "flee"))) {
-    if (!(b.type === "aggressive" && Math.random() < 0.45)) {
-      tx = b.x + (b.x - danger.x) * 2.4; ty = b.y + (b.y - danger.y) * 2.4; mode = "flee";
+    if (d > b.fleeR) continue;
+    if (Math.random() < b.err * 0.15) continue; // mistake
+    if (e.mass > b.mass * EAT) {
+      if (b.type === "aggressive" && Math.random() < 0.45) continue; // neemt risico
+      fleeF += push(b.x * 2 - e.x, b.y * 2 - e.y, e.r * 2.4 * fleeMul);
     }
   }
-  if (mode === "graze") {
-    let want = null;
-    const ch = chargingHumans.find((h) => Math.hypot(h.x - b.x, h.y - b.y) < 1600);
-    if (ch && b.type !== "farmer" && b.type !== "defensive") want = ch;
-    else if (b.type === "hunter" && weakest && b.mass > weakest.mass * EAT &&
-      Math.hypot(weakest.x - b.x, weakest.y - b.y) < b.chaseR) want = weakest;
-    else if (prey && R < T.huntW * b.skill + (b.type === "aggressive" ? 0.25 : 0)) want = prey;
-    else if (b.type === "smart" && prey) {
+  // 2) prooi trekt aan (beste score wint)
+  let weakest = null, wm = 1e9, wd = 0;
+  for (const e of cells) {
+    if (e === b || !e.alive) continue;
+    if (e.mass < wm) { wm = e.mass; weakest = e; wd = Math.hypot(e.x - b.x, e.y - b.y); }
+  }
+  let want = null, best = 0;
+  for (const e of cells) {
+    if (e === b || !e.alive) continue;
+    const d = Math.hypot(e.x - b.x, e.y - b.y);
+    if (d > b.chaseR || b.mass <= e.mass * EAT) continue;
+    if (Math.random() < b.err * 0.15) continue;
+    const s = (e.r * 2.5) / Math.max(80, d);
+    if (s > best) { best = s; want = e; }
+  }
+  if (b.type === "hunter" && weakest && weakest !== b && b.mass > weakest.mass * EAT && wd < b.chaseR * 1.2) want = weakest; // hunter zoekt zwakste
+  const ch = chargingHumans.find((h) => h.alive && Math.hypot(h.x - b.x, h.y - b.y) < 1600);
+  if (ch && b.type !== "farmer" && b.type !== "defensive" && b.mass > ch.mass * EAT) want = ch; // cashers lokken jagers
+  if (want && Math.random() < T.huntW * b.skill + (b.type === "aggressive" ? 0.25 : 0)) {
+    let w = want.r * 2.5 * rm.hunt;
+    if (b.type === "smart") { // alleen voluit bij veilige positie
       let safe = true;
-      for (const e of cells) {
-        if (e !== prey && e.alive && e.mass > b.mass * 1.05 && Math.hypot(e.x - prey.x, e.y - prey.y) < 420) { safe = false; break; }
-      }
-      if (safe || Math.random() < 0.2) want = prey;
+      for (const e of cells) { if (e !== want && e.alive && e.mass > b.mass * 1.05 && Math.hypot(e.x - want.x, e.y - want.y) < 420) { safe = false; break; } }
+      if (!safe) w *= 0.3;
     }
-    if (want) {
-      const lead = (b.type === "smart" || b.type === "hunter") ? 0.55 * b.skill : 0.2;
-      tx = want.x + want.vx * lead; ty = want.y + want.vy * lead; mode = "hunt";
-    } else if (R < T.foodW || !prey) {
-      let bf = null, bfd = 1e9;
-      for (let k = 0; k < 30; k++) {
-        const f = G.foods[(Math.random() * G.foods.length) | 0]; if (!f) break;
-        const d = Math.hypot(f.x - b.x, f.y - b.y); if (d < bfd) { bfd = d; bf = f; }
-      }
-      if (bf) { tx = bf.x; ty = bf.y; }
-    }
+    const lead = (b.type === "smart" || b.type === "hunter") ? 0.55 * b.skill : 0.2;
+    huntF = push(want.x + want.vx * lead, want.y + want.vy * lead, w);
   }
-  if (b.type === "random" && b.mode === "wander") { tx = b.wander.x; ty = b.wander.y; mode = "wander"; }
-  if (mode === "graze" && tx === b.x) {
+  // 3) voer trekt licht aan (beste hap dichtbij)
+  if (Math.random() < T.foodW + 0.25) {
+    let bf = null, bs = 0;
+    for (let k = 0; k < 14; k++) {
+      const f = G.foods[(Math.random() * G.foods.length) | 0]; if (!f) continue;
+      const d = Math.hypot(f.x - b.x, f.y - b.y);
+      if (d > 900) continue;
+      const s = f.mass / Math.max(60, d);
+      if (s > bs) { bs = s; bf = f; }
+    }
+    if (bf) push(bf.x, bf.y, 26 * rm.food);
+  }
+  // 4) randen mijden + dwalen als er niks speelt
+  const mrg = 500;
+  if (b.x < mrg) fx += (mrg - b.x) * 0.6;
+  if (b.x > WORLD - mrg) fx -= (b.x - (WORLD - mrg)) * 0.6;
+  if (b.y < mrg) fy += (mrg - b.y) * 0.6;
+  if (b.y > WORLD - mrg) fy -= (b.y - (WORLD - mrg)) * 0.6;
+  if (Math.abs(fx) + Math.abs(fy) < 4) {
     if (Math.hypot(b.wander.x - b.x, b.wander.y - b.y) < 90 || Math.random() < 0.02)
       b.wander = { x: rand(200, WORLD - 200), y: rand(200, WORLD - 200) };
-    tx = b.wander.x; ty = b.wander.y; mode = "wander";
+    fx += (b.wander.x - b.x) * 0.02; fy += (b.wander.y - b.y) * 0.02;
+    mode = "wander";
   }
+  if (fleeF >= huntF && fleeF > 1) mode = "flee"; else if (huntF > 1) mode = "hunt";
   const errPx = (1 - Math.min(1, b.skill)) * 70 + (b.type === "random" ? 40 : 0);
-  b.tx = clamp(tx + rand(-errPx, errPx), b.r, WORLD - b.r);
-  b.ty = clamp(ty + rand(-errPx, errPx), b.r, WORLD - b.r);
+  b.tx = clamp(b.x + fx + rand(-errPx, errPx), b.r, WORLD - b.r);
+  b.ty = clamp(b.y + fy + rand(-errPx, errPx), b.r, WORLD - b.r);
   b.mode = mode;
 }
 function steer(b, dt) {
@@ -368,11 +396,12 @@ function snapshotBin(forId, withFood) {
   let foods = null;
   if (withFood && me) {
     const px = me.cell.x, py = me.cell.y;
+    const vr = clamp(900 + me.cell.r * 4, 1000, 2200); // zicht groeit mee met je grootte (zoals echte .io-servers)
     const near = [];
     for (const f of G.foods) {
       if (!f) continue;
       const dx = f.x - px, dy = f.y - py;
-      if (dx * dx + dy * dy < 1200 * 1200) near.push(f);
+      if (dx * dx + dy * dy < vr * vr) near.push(f);
       if (near.length >= 500) break;
     }
     foods = near.slice(0, 180);
@@ -505,7 +534,7 @@ wss.on("connection", (ws) => {
       else if (Date.now() - (r.acct.lastClaim || 0) < 5 * 60 * 1000) { send(ws, { t: "auth", ok: 0, reason: "Nog even wachten (max 1× per 5 min)" }); }
       else { r.acct.lastClaim = Date.now(); r.acct.bank += 500; saveAcc(); send(ws, { t: "auth", ok: 1, bank: r.acct.bank }); }
     } else if (m.t === "ping") {
-      send(ws, { t: "pong", t: m.t });
+      send(ws, { t: "pong", ts: m.t });
     } else if (m.t === "input" && id && G.players.has(id)) {
       const p = G.players.get(id);
       p.input.x = clamp(Number(m.x) || p.cell.x, 0, WORLD);
