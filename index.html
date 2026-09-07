@@ -266,6 +266,7 @@ const CLIENT_V = '1.9'; // bump bij elke release — zo zien we zeker dat je de 
 const fmt = n => Math.round(n).toLocaleString('nl-NL');
 const clamp = (v,a,b)=>Math.max(a,Math.min(b,v));
 const massToR = m => clamp(Math.sqrt(m), 4, CFG.MAX_R);
+const speedFor = (mass,base)=>{ const s=base*Math.pow(CFG.START_MASS/mass,0.18); return clamp(s,105,365); }; // zelfde formule als server
 const rand = (a,b)=>a+Math.random()*(b-a);
 
 let bank = parseInt(localStorage.getItem('nova_bank')||'1000',10);
@@ -562,7 +563,9 @@ function applyNetBin(ab){
     P.mass=ym;P.r=massToR(ym);P.vx=yvx;P.vy=yvy;
     P.purse=yp;P.kills=yk;P.alive=!!ya;P.ce=yce||0;
     if(!S._selfInit){ P.x=yx; P.y=yy; S._selfInit=true; } // 1e keer exact
-    else { P.x+=(yx-P.x)*0.6; P.y+=(yy-P.y)*0.6; } // daarna zacht bijsturen i.p.v. rukken
+    else { const ex=yx-P.x, ey=yy-P.y; // lokale sim loopt al vrijwel gelijk: alleen zacht bijsturen
+      if(ex*ex+ey*ey>90000){ P.x=yx; P.y=yy; } // teleport/respawn → direct
+      else { P.x+=ex*0.25; P.y+=ey*0.25; } }
     S.kills=P.kills; S.maxMass=Math.max(S.maxMass,P.mass);
     for(let i=0;i<nM;i++){
       const id=v.getUint16(o,true); o+=2;
@@ -618,11 +621,16 @@ function netLoop(){
     const wy=P.y+(mouse.y-innerHeight/2)*(P.r/320+0.55);
     Srv.sendInput(wx,wy,S.charging);
     if(now-Srv.lastPing>2000){ Srv.lastPing=now; try{ Srv.ws&&Srv.ws.readyState===1&&Srv.ws.send(JSON.stringify({t:'ping',t:now})); }catch(e){} }
-    // eigen cel voorspellen (directe feel); anderen interpoleren met adaptieve vertraging
-    // vertraging schaalt met het snapshot-tempo (±1 interval) zodat het beeld altijd vloeit, nooit hakt
-    const dtS=Math.min(.25,(now-(S.snapT||now))/1000);
+    // eigen cel LOKAAL simuleren met exact dezelfde formule als de server:
+    // loopt vrijwel gelijk op, dus geen zaagtand-rukken en een stilstaande camera
+    const dtS=Math.min(.05,(now-(S.snapT||now))/1000);
     S.snapT=now;
-    P.x+=P.vx*dtS; P.y+=P.vy*dtS;
+    const ang=Math.atan2(wy-P.y,wx-P.x);
+    const sp=speedFor(P.mass,335)*(S.charging?0.92:1);
+    const dist=Math.hypot(wx-P.x,wy-P.y), tv=dist<10?0:sp;
+    const kk=Math.min(1,dtS*6);
+    P.vx+=(Math.cos(ang)*tv-P.vx)*kk; P.vy+=(Math.sin(ang)*tv-P.vy)*kk;
+    P.x=clamp(P.x+P.vx*dtS,P.r,CFG.WORLD-P.r); P.y=clamp(P.y+P.vy*dtS,P.r,CFG.WORLD-P.r);
     const seg=Math.max(1,(S.snapB||now)-(S.snapA||now));
     const avg=S.snapAvg||seg;
     const dynDelay=clamp(avg,30,120); // exact ±1 interval achter: vloeiend, nooit voorbij het doel
