@@ -264,7 +264,7 @@ const CFG = {
   MAX_R: 235,
 };
 const $ = id => document.getElementById(id);
-const CLIENT_V = '2.1'; // bump bij elke release — zo zien we zeker dat je de nieuwe code draait
+const CLIENT_V = '2.2'; // bump bij elke release — zo zien we zeker dat je de nieuwe code draait
 const fmt = n => Math.round(n).toLocaleString('nl-NL');
 const clamp = (v,a,b)=>Math.max(a,Math.min(b,v));
 const massToR = m => clamp(Math.sqrt(m), 4, CFG.MAX_R);
@@ -423,14 +423,20 @@ function updateHUD(){
 /* ---------- render ---------- */
 function draw(){
   const cam=camFocus();
+  // camera dempen: volgt zacht i.p.v. elke micro-ruk (zoals slither.io)
+  const cdt=Math.min(.1,(performance.now()-(S.camT||performance.now()))/1000); S.camT=performance.now();
+  if(S.camX===undefined){ S.camX=cam.x; S.camY=cam.y; S.camR=cam.r; }
+  const ck=Math.min(1,cdt*8);
+  S.camX+=(cam.x-S.camX)*ck; S.camY+=(cam.y-S.camY)*ck; S.camR+=(cam.r-S.camR)*ck;
+  const cx=S.camX, cy=S.camY, cr=S.camR;
   ctx.setTransform(DPR,0,0,DPR,0,0);
   if(bgSpr) ctx.drawImage(bgSpr,0,0,innerWidth,innerHeight);
   else { ctx.fillStyle='#070a14'; ctx.fillRect(0,0,innerWidth,innerHeight); }
-  const zoom=clamp(760/(cam.r*2.4),0.30,1.5);
-  ctx.save(); ctx.translate(innerWidth/2,innerHeight/2); ctx.scale(zoom,zoom); ctx.translate(-cam.x,-cam.y);
+  const zoom=clamp(760/(cr*2.4),0.30,1.5);
+  ctx.save(); ctx.translate(innerWidth/2,innerHeight/2); ctx.scale(zoom,zoom); ctx.translate(-cx,-cy);
   // grid-tegels blitten (veel sneller dan tientallen lijnen stroken)
   const T=256, vw=innerWidth/zoom, vh=innerHeight/zoom;
-  const vx0=cam.x-vw/2-60,vx1=cam.x+vw/2+60,vy0=cam.y-vh/2-60,vy1=cam.y+vh/2+60;
+  const vx0=cx-vw/2-60,vx1=cx+vw/2+60,vy0=cy-vh/2-60,vy1=cy+vh/2+60;
   if(tileSpr){ const gx0=Math.floor(vx0/T)*T, gy0=Math.floor(vy0/T)*T;
     for(let gy=gy0;gy<vy1;gy+=T) for(let gx=gx0;gx<vx1;gx+=T) ctx.drawImage(tileSpr,gx,gy,T,T); }
   // arena rand: dubbele neon ring (cyaan + magenta)
@@ -633,7 +639,7 @@ function applyNetBin(ab){
     if(!S._selfInit){ P.x=yx; P.y=yy; S._selfInit=true; } // 1e keer exact
     else { const ex=yx-P.x, ey=yy-P.y; // lokale sim loopt al vrijwel gelijk: alleen zacht bijsturen
       if(ex*ex+ey*ey>90000){ P.x=yx; P.y=yy; } // teleport/respawn → direct
-      else { P.x+=ex*0.25; P.y+=ey*0.25; } }
+      else { P.x+=ex*0.12; P.y+=ey*0.12; } } // lokale sim is leidend: mini-correcties
     S.kills=P.kills; S.maxMass=Math.max(S.maxMass,P.mass);
     for(let i=0;i<nM;i++){
       const id=v.getUint16(o,true); o+=2;
@@ -649,8 +655,8 @@ function applyNetBin(ab){
     for(const b of bcells){
       const mt=look(b[0]);
       let c=S.botPool.get(b[0]);
-      if(!c){ c=newCell(b[1],b[2],b[3],mt.n,mt.c); c.ox=b[1];c.oy=b[2];c.tx=b[1];c.ty=b[2]; S.botPool.set(b[0],c); }
-      else { c.ox=c.tx; c.oy=c.ty; c.tx=b[1]; c.ty=b[2]; }
+      if(!c){ c=newCell(b[1],b[2],b[3],mt.n,mt.c); c.tx=b[1];c.ty=b[2]; S.botPool.set(b[0],c); }
+      else { c.tx=b[1]; c.ty=b[2]; }
       c.mass=b[3];c.r=massToR(b[3]);c.vx=b[4]||0;c.vy=b[5]||0;c.alive=true;
       c.name=mt.n;c.color=mt.c;c.purse=b[6];c.kills=b[7]||0;
       S.bots.push(c); aliveB.add(b[0]);
@@ -661,14 +667,16 @@ function applyNetBin(ab){
     for(const p of pcells){
       const mt=look(p[0]);
       let c=S.remPool.get(p[0]);
-      if(!c){ c=newCell(p[1],p[2],p[3],mt.n,mt.c); c.remote=true; c.ox=p[1];c.oy=p[2];c.tx=p[1];c.ty=p[2]; S.remPool.set(p[0],c); }
-      else { c.ox=c.tx; c.oy=c.ty; c.tx=p[1]; c.ty=p[2]; }
+      if(!c){ c=newCell(p[1],p[2],p[3],mt.n,mt.c); c.remote=true; c.tx=p[1];c.ty=p[2]; S.remPool.set(p[0],c); }
+      else { c.tx=p[1]; c.ty=p[2]; }
       c.mass=p[3];c.r=massToR(p[3]);c.vx=p[4]||0;c.vy=p[5]||0;c.alive=true;
       c.name=mt.n;c.color=mt.c;c.purse=p[6]||0;c.kills=p[7]||0;
       S.remotes.push(c); aliveR.add(p[0]);
     }
     for(const k of S.remPool.keys()) if(!aliveR.has(k)) S.remPool.delete(k);
-    if(farr) S.foods=farr.map(f=>({x:f[0],y:f[1],mass:f[2],r:massToR(f[2]),color:FOODPAL[Math.abs(f[0]*7+f[1]*13)%FOODPAL.length]}));
+    if(farr){ const tN=performance.now(); // voer max 4×/s verversen: geen geflikker aan de rand
+      if(tN-(S.foodT||0)>250){ S.foodT=tN;
+        S.foods=farr.map(f=>({x:f[0],y:f[1],mass:f[2],r:massToR(f[2]),color:FOODPAL[Math.abs(f[0]*7+f[1]*13)%FOODPAL.length]})); } }
     S.botTarget=40;
     // jitter meten: bij een rommelige verbinding automatisch meer vertraging (= smooth i.p.v. hakkel)
     const nowT=performance.now();
@@ -699,12 +707,11 @@ function netLoop(){
     const kk=Math.min(1,dtS*6);
     P.vx+=(Math.cos(ang)*tv-P.vx)*kk; P.vy+=(Math.sin(ang)*tv-P.vy)*kk;
     P.x=clamp(P.x+P.vx*dtS,P.r,CFG.WORLD-P.r); P.y=clamp(P.y+P.vy*dtS,P.r,CFG.WORLD-P.r);
-    const seg=Math.max(1,(S.snapB||now)-(S.snapA||now));
-    const avg=S.snapAvg||seg;
-    const dynDelay=clamp(avg,30,120); // exact ±1 interval achter: vloeiend, nooit voorbij het doel
-    const al=clamp((now-dynDelay-(S.snapA||now))/seg,0,1); // nooit >1 = nooit uit het frame vliegen
-    for(const b of S.bots){ b.x=b.ox+(b.tx-b.ox)*al; b.y=b.oy+(b.ty-b.oy)*al; }
-    for(const r of S.remotes){ r.x=r.ox+(r.tx-r.ox)*al; r.y=r.oy+(r.ty-r.oy)*al; }
+    // anderen dempen naar hun doel: framerate-vloeiend en ongevoelig voor timing-haperingen
+    // (geen intervallen/delays meer die stuk kunnen gaan — convergeert altijd)
+    const damp=Math.min(1,dtS*10);
+    for(const b of S.bots){ b.x+=(b.tx-b.x)*damp; b.y+=(b.ty-b.y)*damp; }
+    for(const r of S.remotes){ r.x+=(r.tx-r.x)*damp; r.y+=(r.ty-r.y)*damp; }
     // cashout-ring volgt de server-timer (authoritatief)
     if(S.charging){
       const pct=clamp((P.ce||0)/CFG.CASHOUT,0,1);
