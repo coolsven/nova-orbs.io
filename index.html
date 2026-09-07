@@ -264,7 +264,7 @@ const CFG = {
   MAX_R: 235,
 };
 const $ = id => document.getElementById(id);
-const CLIENT_V = '2.0'; // bump bij elke release — zo zien we zeker dat je de nieuwe code draait
+const CLIENT_V = '2.1'; // bump bij elke release — zo zien we zeker dat je de nieuwe code draait
 const fmt = n => Math.round(n).toLocaleString('nl-NL');
 const clamp = (v,a,b)=>Math.max(a,Math.min(b,v));
 const massToR = m => clamp(Math.sqrt(m), 4, CFG.MAX_R);
@@ -284,10 +284,47 @@ let netPass = localStorage.getItem('nova_pass')||''; // prototype: wachtwoord on
 
 const canvas=$('game'), ctx=canvas.getContext('2d');
 const mini=$('mini'), mctx=mini.getContext('2d');
-let DPR=1, bgGrad=null;
-function resize(){ DPR=Math.min(1.5,window.devicePixelRatio||1); canvas.width=innerWidth*DPR; canvas.height=innerHeight*DPR; canvas.style.width=innerWidth+'px'; canvas.style.height=innerHeight+'px';
-  bgGrad=ctx.createRadialGradient(innerWidth/2,innerHeight/2,100,innerWidth/2,innerHeight/2,Math.max(innerWidth,innerHeight)*.75);
-  bgGrad.addColorStop(0,'#0c1230'); bgGrad.addColorStop(1,'#05070f'); }
+let DPR=1, bgSpr=null, tileSpr=null, foodSpr={}, glowSpr=null;
+/* Optimalisatie: alles wat statisch is één keer prerenderen, per frame alleen blitten */
+function makeSprites(){
+  tileSpr=document.createElement('canvas'); tileSpr.width=tileSpr.height=256;
+  const t=tileSpr.getContext('2d');
+  t.strokeStyle='rgba(140,180,255,.10)'; t.lineWidth=2;
+  t.beginPath(); t.moveTo(0.5,0); t.lineTo(0.5,256); t.moveTo(0,0.5); t.lineTo(256,0.5); t.stroke();
+  t.fillStyle='rgba(140,180,255,.18)';
+  for(const [dx,dy] of [[0,0],[256,0],[0,256],[256,256]]){ t.beginPath(); t.arc(dx,dy,3,0,7); t.fill(); }
+  foodSpr={};
+  for(const c of FOODPAL){ // voer-sprite per kleur, glow al ingebakken
+    const s=document.createElement('canvas'); s.width=s.height=48;
+    const g=s.getContext('2d');
+    const rg=g.createRadialGradient(24,24,2,24,24,23);
+    rg.addColorStop(0,'#ffffff'); rg.addColorStop(0.35,c); rg.addColorStop(1,'rgba(0,0,0,0)');
+    g.fillStyle=rg; g.beginPath(); g.arc(24,24,23,0,7); g.fill();
+    foodSpr[c]=s;
+  }
+  glowSpr=document.createElement('canvas'); glowSpr.width=glowSpr.height=128;
+  const gg=glowSpr.getContext('2d');
+  const gr=gg.createRadialGradient(64,64,4,64,64,63);
+  gr.addColorStop(0,'rgba(255,255,255,.85)'); gr.addColorStop(0.4,'rgba(255,255,255,.28)'); gr.addColorStop(1,'rgba(255,255,255,0)');
+  gg.fillStyle=gr; gg.beginPath(); gg.arc(64,64,63,0,7); gg.fill();
+}
+function makeBG(){ // achtergrond + nevel + vignette in één plaatje (alleen bij resizen)
+  bgSpr=document.createElement('canvas'); bgSpr.width=Math.max(2,Math.round(innerWidth*DPR)); bgSpr.height=Math.max(2,Math.round(innerHeight*DPR));
+  const b=bgSpr.getContext('2d'); b.scale(DPR,DPR);
+  const g=b.createRadialGradient(innerWidth/2,innerHeight/2,80,innerWidth/2,innerHeight/2,Math.max(innerWidth,innerHeight)*.72);
+  g.addColorStop(0,'#101a3f'); g.addColorStop(0.55,'#0a1028'); g.addColorStop(1,'#04060f');
+  b.fillStyle=g; b.fillRect(0,0,innerWidth,innerHeight);
+  b.globalAlpha=.5;
+  const blob=(x,y,r,c)=>{ const rg=b.createRadialGradient(x,y,0,x,y,r); rg.addColorStop(0,c); rg.addColorStop(1,'rgba(0,0,0,0)'); b.fillStyle=rg; b.beginPath(); b.arc(x,y,r,0,7); b.fill(); };
+  blob(innerWidth*.2,innerHeight*.25,260,'rgba(90,60,220,.20)');
+  blob(innerWidth*.85,innerHeight*.7,300,'rgba(20,180,220,.16)');
+  blob(innerWidth*.6,innerHeight*.1,200,'rgba(255,80,180,.10)');
+  b.globalAlpha=1;
+  const v=b.createRadialGradient(innerWidth/2,innerHeight/2,Math.min(innerWidth,innerHeight)*.35,innerWidth/2,innerHeight/2,Math.max(innerWidth,innerHeight)*.75);
+  v.addColorStop(0,'rgba(0,0,0,0)'); v.addColorStop(1,'rgba(0,0,0,.5)');
+  b.fillStyle=v; b.fillRect(0,0,innerWidth,innerHeight);
+}
+function resize(){ DPR=Math.min(1.5,window.devicePixelRatio||1); canvas.width=innerWidth*DPR; canvas.height=innerHeight*DPR; canvas.style.width=innerWidth+'px'; canvas.style.height=innerHeight+'px'; makeBG(); }
 addEventListener('resize',resize); resize();
 
 const mouse={x:innerWidth/2,y:innerHeight/2};
@@ -303,6 +340,7 @@ function beep(f=440,d=.08,type='sine',g=.12){ try{ AC=AC||new (window.AudioConte
 const FOODPAL=['#5ef2b8','#5aa8ff','#c792ff','#ffd84d','#ff8ab2','#6ee7ff','#9df06e'];
 const PAL=['#5ef2b8','#5aa8ff','#c792ff','#ff8ab2','#ffd84d','#ff8a5c','#6ee7ff','#9df06e','#ff6b6b','#f2f25e']; // zelfde volgorde als server!
 let S=null;
+makeSprites(); // na FOODPAL/PAL: sprites bouwen
 
 function newCell(x,y,mass,name,color){
   return {x,y,mass,r:massToR(mass),vx:0,vy:0,alive:true,name,color,
@@ -386,25 +424,26 @@ function updateHUD(){
 function draw(){
   const cam=camFocus();
   ctx.setTransform(DPR,0,0,DPR,0,0);
-  ctx.fillStyle=bgGrad; ctx.fillRect(0,0,innerWidth,innerHeight);
+  if(bgSpr) ctx.drawImage(bgSpr,0,0,innerWidth,innerHeight);
+  else { ctx.fillStyle='#070a14'; ctx.fillRect(0,0,innerWidth,innerHeight); }
   const zoom=clamp(760/(cam.r*2.4),0.30,1.5);
   ctx.save(); ctx.translate(innerWidth/2,innerHeight/2); ctx.scale(zoom,zoom); ctx.translate(-cam.x,-cam.y);
-  // grid
-  ctx.strokeStyle='rgba(255,255,255,.055)'; ctx.lineWidth=1/zoom;
-  const gs=160,vw=innerWidth/zoom,vh=innerHeight/zoom;
-  const x0=Math.floor((cam.x-vw/2)/gs)*gs,y0=Math.floor((cam.y-vh/2)/gs)*gs;
-  ctx.beginPath();
-  for(let x=x0;x<=cam.x+vw/2+gs;x+=gs){ctx.moveTo(x,y0);ctx.lineTo(x,y0+vh+2*gs);}
-  for(let y=y0;y<=cam.y+vh/2+gs;y+=gs){ctx.moveTo(x0,y);ctx.lineTo(x0+vw+2*gs,y);}
-  ctx.stroke();
-  // arena rand
-  ctx.strokeStyle='rgba(94,242,184,.55)'; ctx.lineWidth=10; ctx.strokeRect(8,8,CFG.WORLD-16,CFG.WORLD-16);
-  ctx.strokeStyle='rgba(255,216,77,.25)'; ctx.lineWidth=26; ctx.strokeRect(-8,-8,CFG.WORLD+16,CFG.WORLD+16);
-  // voer
+  // grid-tegels blitten (veel sneller dan tientallen lijnen stroken)
+  const T=256, vw=innerWidth/zoom, vh=innerHeight/zoom;
   const vx0=cam.x-vw/2-60,vx1=cam.x+vw/2+60,vy0=cam.y-vh/2-60,vy1=cam.y+vh/2+60;
+  if(tileSpr){ const gx0=Math.floor(vx0/T)*T, gy0=Math.floor(vy0/T)*T;
+    for(let gy=gy0;gy<vy1;gy+=T) for(let gx=gx0;gx<vx1;gx+=T) ctx.drawImage(tileSpr,gx,gy,T,T); }
+  // arena rand: dubbele neon ring (cyaan + magenta)
+  ctx.strokeStyle='rgba(34,211,238,.6)'; ctx.lineWidth=8; ctx.strokeRect(8,8,CFG.WORLD-16,CFG.WORLD-16);
+  ctx.strokeStyle='rgba(255,80,180,.28)'; ctx.lineWidth=22; ctx.strokeRect(-6,-6,CFG.WORLD+12,CFG.WORLD+12);
+  // voer als kant-en-klare sprites blitten (max 260 in beeld)
+  let drawn=0;
   for(const f of S.foods){ if(f.x<vx0||f.x>vx1||f.y<vy0||f.y>vy1) continue;
     if(!f.r) f.r=massToR(f.mass);
-    ctx.fillStyle=f.color; ctx.globalAlpha=.9; ctx.beginPath(); ctx.arc(f.x,f.y,f.r,0,7); ctx.fill(); ctx.globalAlpha=1; }
+    if(++drawn>260) break;
+    const sp=foodSpr[f.color], s=f.r*2.6;
+    if(sp) ctx.drawImage(sp,f.x-s/2,f.y-s/2,s,s);
+    else { ctx.fillStyle=f.color; ctx.beginPath(); ctx.arc(f.x,f.y,f.r,0,7); ctx.fill(); } }
   for(const b of S.bots){ if(!b.alive) continue;
     if(b.x+b.r<vx0||b.x-b.r>vx1||b.y+b.r<vy0||b.y-b.r>vy1) continue; // buiten beeld = niet tekenen
     drawCell(b,false); }
@@ -419,17 +458,34 @@ function draw(){
 }
 function drawCell(c,isMe){
   const charging=S&&isMe&&S.charging;
-  // glow alleen voor jezelf: shadowBlur is de duurste canvas-operatie
-  ctx.fillStyle=c.color;
-  if(isMe){ ctx.shadowColor=c.color; ctx.shadowBlur=charging?40:16; }
-  else ctx.shadowBlur=0;
-  ctx.beginPath(); ctx.arc(c.x,c.y,c.r,0,7); ctx.fill(); ctx.shadowBlur=0;
-  // glans alleen voor jezelf
-  if(isMe){ ctx.fillStyle='rgba(255,255,255,.16)'; ctx.beginPath(); ctx.arc(c.x-c.r*.32,c.y-c.r*.34,c.r*.46,0,7); ctx.fill(); }
-  // binnenkern
-  ctx.fillStyle='rgba(0,0,0,.14)'; ctx.beginPath(); ctx.arc(c.x,c.y,c.r*.72,0,7); ctx.fill();
-  if(isMe){ ctx.strokeStyle=charging?'#ffd84d':'#fff'; ctx.lineWidth=Math.max(2,c.r*.06); ctx.beginPath(); ctx.arc(c.x,c.y,c.r,0,7); ctx.stroke();
-    if(charging){ ctx.strokeStyle='rgba(255,216,77,.8)'; ctx.setLineDash([10,8]); ctx.lineWidth=3; ctx.beginPath(); ctx.arc(c.x,c.y,c.r+12,0,7); ctx.stroke(); ctx.setLineDash([]); } }
+  if(isMe){
+    // NOVA CORE: glow-sprite (geen shadowBlur!), donkere body met neon rand,
+    // draaiende orbit-segmenten en een gloeiende kern
+    const gs=c.r*3.4;
+    ctx.globalAlpha=charging?0.9:0.55;
+    ctx.drawImage(glowSpr,c.x-gs/2,c.y-gs/2,gs,gs);
+    ctx.globalAlpha=1;
+    ctx.fillStyle='#0d1330';
+    ctx.beginPath(); ctx.arc(c.x,c.y,c.r,0,7); ctx.fill();
+    ctx.strokeStyle=c.color; ctx.lineWidth=Math.max(2.5,c.r*.09);
+    ctx.beginPath(); ctx.arc(c.x,c.y,c.r,0,7); ctx.stroke();
+    const rot=performance.now()/1000*(charging?2.6:1.1), orad=c.r+Math.max(6,c.r*.16);
+    ctx.strokeStyle=charging?'#ffd84d':'rgba(255,255,255,.85)';
+    ctx.lineWidth=Math.max(2,c.r*.05);
+    for(let k=0;k<2;k++){ const a0=rot+k*Math.PI;
+      ctx.beginPath(); ctx.arc(c.x,c.y,orad,a0,a0+Math.PI*0.55); ctx.stroke(); }
+    ctx.fillStyle=c.color;
+    ctx.beginPath(); ctx.arc(c.x,c.y,Math.max(3,c.r*.2),0,7); ctx.fill();
+    ctx.fillStyle='rgba(255,255,255,.9)';
+    ctx.beginPath(); ctx.arc(c.x-c.r*.06,c.y-c.r*.06,Math.max(1.5,c.r*.08),0,7); ctx.fill();
+  } else {
+    // anderen: plat en snel — 1 fill + 1 rand, geen glow/glans/tekst-overload
+    ctx.fillStyle=c.color;
+    ctx.beginPath(); ctx.arc(c.x,c.y,c.r,0,7); ctx.fill();
+    ctx.strokeStyle=c.remote?'rgba(255,255,255,.7)':'rgba(0,0,0,.35)';
+    ctx.lineWidth=Math.max(1.5,c.r*.07);
+    ctx.beginPath(); ctx.arc(c.x,c.y,c.r,0,7); ctx.stroke();
+  }
   // label: naam voor iedereen, 2e regel (tekst = duur) alleen voor mensen
   const fs=clamp(c.r*.42,12,30);
   ctx.fillStyle='#fff'; ctx.font='800 '+fs+'px Inter,Segoe UI'; ctx.textAlign='center';
