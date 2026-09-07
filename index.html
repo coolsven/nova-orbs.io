@@ -264,7 +264,7 @@ const CFG = {
   MAX_R: 235,
 };
 const $ = id => document.getElementById(id);
-const CLIENT_V = '2.2'; // bump bij elke release — zo zien we zeker dat je de nieuwe code draait
+const CLIENT_V = '2.3'; // bump bij elke release — zo zien we zeker dat je de nieuwe code draait
 const fmt = n => Math.round(n).toLocaleString('nl-NL');
 const clamp = (v,a,b)=>Math.max(a,Math.min(b,v));
 const massToR = m => clamp(Math.sqrt(m), 4, CFG.MAX_R);
@@ -634,12 +634,11 @@ function applyNetBin(ab){
       c.isPlayer=true; S.player=c; S.humans=[c];
     }
     const P=S.player;
-    P.mass=ym;P.r=massToR(ym);P.vx=yvx;P.vy=yvy;
+    P.mass=ym;P.r=massToR(ym); // snelheid blijft lokaal: server-overschrijving gaf micro-rukken
     P.purse=yp;P.kills=yk;P.alive=!!ya;P.ce=yce||0;
     if(!S._selfInit){ P.x=yx; P.y=yy; S._selfInit=true; } // 1e keer exact
-    else { const ex=yx-P.x, ey=yy-P.y; // lokale sim loopt al vrijwel gelijk: alleen zacht bijsturen
-      if(ex*ex+ey*ey>90000){ P.x=yx; P.y=yy; } // teleport/respawn → direct
-      else { P.x+=ex*0.12; P.y+=ey*0.12; } } // lokale sim is leidend: mini-correcties
+    else { const ex=yx-P.x, ey=yy-P.y; // server loopt door latency altijd achter: nooit naartoe trekken,
+      if(ex*ex+ey*ey>62500){ P.x=yx; P.y=yy; } } // alleen bij >250px (spawn/desync), anders 100% lokale sim
     S.kills=P.kills; S.maxMass=Math.max(S.maxMass,P.mass);
     for(let i=0;i<nM;i++){
       const id=v.getUint16(o,true); o+=2;
