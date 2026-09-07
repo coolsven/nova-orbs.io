@@ -288,7 +288,7 @@ const CFG = {
   MAX_R: 235,
 };
 const $ = id => document.getElementById(id);
-const CLIENT_V = '2.7'; // bump bij elke release — zo zien we zeker dat je de nieuwe code draait
+const CLIENT_V = '2.8'; // bump bij elke release — zo zien we zeker dat je de nieuwe code draait
 const fmt = n => Math.round(n).toLocaleString('en-US');
 const clamp = (v,a,b)=>Math.max(a,Math.min(b,v));
 const massToR = m => clamp(Math.sqrt(m), 4, CFG.MAX_R);

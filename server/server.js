@@ -14,8 +14,8 @@ const crypto = require("crypto");
 const { WebSocketServer } = require("ws");
 
 const PORT = process.env.PORT || 3000;
-const SERVER_V = '2.7'; // bump mee met client
-const WORLD = 5500, EAT = 1.15, CASHOUT = 10, RAKE = 0.05;
+const SERVER_V = '2.8'; // bump mee met client
+const WORLD = 5500, EAT = 1.15, EAT_PLAYER = 1.10, CASHOUT = 10, RAKE = 0.05; // spelers eten iets makkelijker dan bots
 const START_MASS = 430, MAX_R = 235, FOOD_TARGET = 1000, ARENA_SIZE = 40;
 const MAX_PLAYERS = 12, TICK_MS = 50, SNAP_MS = Math.round(1000 / (Number(process.env.SNAP_HZ) || 20)); // hoger = smoother (10 = zuinig, 20 = standaard)
 
@@ -65,10 +65,10 @@ const TYPES = {
 };
 const TYPE_KEYS = Object.keys(TYPES);
 const DIFFS = {
-  chill:    { skill: [0.55, 0.85], react: [200, 480], err: [0.15, 0.40], spd: 0.96 },
-  normaal:  { skill: [0.72, 0.96], react: [110, 280], err: [0.05, 0.18], spd: 1.03 },
-  moeilijk: { skill: [0.85, 1.00], react: [80, 200],  err: [0.02, 0.08], spd: 1.08 },
-  pro:      { skill: [0.95, 1.05], react: [60, 140],  err: [0.00, 0.03], spd: 1.13 },
+  chill:    { skill: [0.55, 0.85], react: [200, 480], err: [0.15, 0.40], spd: 0.94 },
+  normaal:  { skill: [0.72, 0.96], react: [110, 280], err: [0.05, 0.18], spd: 1.00 },
+  moeilijk: { skill: [0.85, 1.00], react: [80, 200],  err: [0.02, 0.08], spd: 1.05 },
+  pro:      { skill: [0.95, 1.05], react: [60, 140],  err: [0.00, 0.03], spd: 1.10 },
 };
 const DIFF = DIFFS[process.env.BOT_DIFF] || DIFFS.normaal;
 const BOTNAMES = ["Vex","Milo","Zara","Koda","Juno","Pip","Ravi","Sable","Neo","Lux","Onyx","Finn","Iris","Dax","Elif","Noa","Romy","Stijn","Yara","Bram","Liv","Sem","Tess","Mo","Finn","Jace","Lena","Otto","Nina","Rico","Ivy","Leo","Sana","Daan","Evi","Thijs"];
@@ -234,8 +234,9 @@ function eatFoodGrid(c, grid) {
 }
 function tryEat(a, b) {
   if (!a.alive || !b.alive || a === b) return false;
-  if (a.mass < b.mass * EAT) return false;
-  if (Math.hypot(a.x - b.x, a.y - b.y) > a.r - b.r * 0.35) return false;
+  const pa = isPlayerCell(a);
+  if (a.mass < b.mass * (pa ? EAT_PLAYER : EAT)) return false; // speler heeft minder overmacht nodig…
+  if (Math.hypot(a.x - b.x, a.y - b.y) > a.r - b.r * (pa ? 0.2 : 0.35)) return false; // …en meer overlap-marge
   a.mass += b.mass * 0.82 * gainEff(a.mass) + 60;
   a.purse += b.purse; a.kills++; b.alive = false;
   return true;
@@ -399,11 +400,30 @@ function authUser(user, pass, mode) {
    voer: i16 x, i16 y, u16 massa (6B)
    jij: i16 x,y, u32 massa, i16 vx,vy, u32 beurs, u16 kills, u8 alive, f32 ce, u8 charging (24B)
    meta: u16 id, u8 len, bytes, u8 kleurIdx */
+function wcell(buf, o, id, x, y, mass, vx, vy, purse, kills) { // 20B per cel
+  buf.writeUInt16LE(id & 0xffff, o); o += 2;
+  buf.writeInt16LE(clamp(Math.round(x), -30000, 30000), o); o += 2;
+  buf.writeInt16LE(clamp(Math.round(y), -30000, 30000), o); o += 2;
+  buf.writeUInt32LE(Math.max(0, Math.round(mass)), o); o += 4;
+  buf.writeInt16LE(clamp(Math.round(vx * 10), -30000, 30000), o); o += 2;
+  buf.writeInt16LE(clamp(Math.round(vy * 10), -30000, 30000), o); o += 2;
+  buf.writeUInt32LE(Math.max(0, Math.round(purse)), o); o += 4;
+  buf.writeUInt16LE(Math.min(65535, kills || 0), o); o += 2;
+  return o;
+}
+let sharedBots = null; // 1× per ronde gebouwd (voor alle spelers gelijk) i.p.v. per speler
+function buildSharedBots() {
+  const list = [];
+  for (const b of G.bots) if (b.alive) list.push(b);
+  const buf = Buffer.allocUnsafe(20 * list.length);
+  let o = 0;
+  for (const b of list) o = wcell(buf, o, b.bid, b.x, b.y, b.mass, b.vx, b.vy, b.purse, b.kills);
+  sharedBots = { buf, list };
+}
 function snapshotBin(forId, withFood) {
   const me = G.players.get(forId);
   const seen = me ? me.seen : null;
-  const bcells = [];
-  for (const b of G.bots) if (b.alive) bcells.push(b);
+  const bcells = sharedBots.list;
   const pcells = [];
   for (const [id, p] of G.players) if (id !== forId && !p.done && p.cell.alive) pcells.push(p);
   let foods = null;
@@ -431,58 +451,53 @@ function snapshotBin(forId, withFood) {
   for (const b of bcells) metaFor(b.bid, b.name, b.color);
   for (const p of pcells) metaFor(p.sid, p.cell.name, p.cell.color);
   const nf = foods ? foods.length : 0;
-  const metaSize = metaBufs.reduce((s, m) => s + 2 + 1 + m.nb.length + 1, 0);
-  const buf = Buffer.allocUnsafe(8 + 20 * (bcells.length + pcells.length) + 6 * nf + 24 + metaSize);
-  let o = 0;
-  buf.writeUInt16LE(bcells.length, o); o += 2;
-  buf.writeUInt16LE(pcells.length, o); o += 2;
-  buf.writeUInt16LE(nf, o); o += 2;
-  buf.writeUInt16LE(metaBufs.length, o); o += 2;
-  const wcell = (id, x, y, mass, vx, vy, purse, kills) => {
-    buf.writeUInt16LE(id & 0xffff, o); o += 2;
-    buf.writeInt16LE(clamp(Math.round(x), -30000, 30000), o); o += 2;
-    buf.writeInt16LE(clamp(Math.round(y), -30000, 30000), o); o += 2;
-    buf.writeUInt32LE(Math.max(0, Math.round(mass)), o); o += 4;
-    buf.writeInt16LE(clamp(Math.round(vx * 10), -30000, 30000), o); o += 2;
-    buf.writeInt16LE(clamp(Math.round(vy * 10), -30000, 30000), o); o += 2;
-    buf.writeUInt32LE(Math.max(0, Math.round(purse)), o); o += 4;
-    buf.writeUInt16LE(Math.min(65535, kills || 0), o); o += 2;
-  };
-  for (const b of bcells) wcell(b.bid, b.x, b.y, b.mass, b.vx, b.vy, b.purse, b.kills);
-  for (const p of pcells) wcell(p.sid, p.cell.x, p.cell.y, p.cell.mass, p.cell.vx, p.cell.vy, p.cell.purse, p.cell.kills);
+  const header = Buffer.allocUnsafe(8);
+  header.writeUInt16LE(bcells.length, 0);
+  header.writeUInt16LE(pcells.length, 2);
+  header.writeUInt16LE(nf, 4);
+  header.writeUInt16LE(metaBufs.length, 6);
+  const pbuf = Buffer.allocUnsafe(20 * pcells.length);
+  let po = 0;
+  for (const p of pcells) po = wcell(pbuf, po, p.sid, p.cell.x, p.cell.y, p.cell.mass, p.cell.vx, p.cell.vy, p.cell.purse, p.cell.kills);
+  const fbuf = Buffer.allocUnsafe(6 * nf);
+  let fo = 0;
   if (foods) for (const f of foods) {
-    buf.writeInt16LE(Math.round(f.x), o); o += 2;
-    buf.writeInt16LE(Math.round(f.y), o); o += 2;
-    buf.writeUInt16LE(Math.min(65535, Math.round(f.mass)), o); o += 2;
+    fbuf.writeInt16LE(Math.round(f.x), fo); fo += 2;
+    fbuf.writeInt16LE(Math.round(f.y), fo); fo += 2;
+    fbuf.writeUInt16LE(Math.min(65535, Math.round(f.mass)), fo); fo += 2;
   }
+  const ybuf = Buffer.allocUnsafe(24);
+  let yo = 0;
   if (me) {
     const c = me.cell;
-    buf.writeInt16LE(Math.round(c.x), o); o += 2;
-    buf.writeInt16LE(Math.round(c.y), o); o += 2;
-    buf.writeUInt32LE(Math.max(0, Math.round(c.mass)), o); o += 4;
-    buf.writeInt16LE(clamp(Math.round(c.vx * 10), -30000, 30000), o); o += 2;
-    buf.writeInt16LE(clamp(Math.round(c.vy * 10), -30000, 30000), o); o += 2;
-    buf.writeUInt32LE(Math.max(0, Math.round(c.purse)), o); o += 4;
-    buf.writeUInt16LE(Math.min(65535, c.kills || 0), o); o += 2;
-    buf.writeUInt8(c.alive ? 1 : 0, o); o += 1;
-    buf.writeFloatLE(me.chargeEl || 0, o); o += 4;
-    buf.writeUInt8(me.input.c ? 1 : 0, o); o += 1;
-  } else {
-    for (let k = 0; k < 24; k++) { buf.writeUInt8(0, o); o += 1; }
+    ybuf.writeInt16LE(Math.round(c.x), yo); yo += 2;
+    ybuf.writeInt16LE(Math.round(c.y), yo); yo += 2;
+    ybuf.writeUInt32LE(Math.max(0, Math.round(c.mass)), yo); yo += 4;
+    ybuf.writeInt16LE(clamp(Math.round(c.vx * 10), -30000, 30000), yo); yo += 2;
+    ybuf.writeInt16LE(clamp(Math.round(c.vy * 10), -30000, 30000), yo); yo += 2;
+    ybuf.writeUInt32LE(Math.max(0, Math.round(c.purse)), yo); yo += 4;
+    ybuf.writeUInt16LE(Math.min(65535, c.kills || 0), yo); yo += 2;
+    ybuf.writeUInt8(c.alive ? 1 : 0, yo); yo += 1;
+    ybuf.writeFloatLE(me.chargeEl || 0, yo); yo += 4;
+    ybuf.writeUInt8(me.input.c ? 1 : 0, yo); yo += 1;
   }
+  const metaSize = metaBufs.reduce((s, m) => s + 2 + 1 + m.nb.length + 1, 0);
+  const mbuf = Buffer.allocUnsafe(metaSize);
+  let mo = 0;
   for (const m of metaBufs) {
-    buf.writeUInt16LE(m.id, o); o += 2;
-    buf.writeUInt8(m.nb.length, o); o += 1;
-    m.nb.copy(buf, o); o += m.nb.length;
-    buf.writeUInt8(m.cidx & 0xff, o); o += 1;
+    mbuf.writeUInt16LE(m.id, mo); mo += 2;
+    mbuf.writeUInt8(m.nb.length, mo); mo += 1;
+    m.nb.copy(mbuf, mo); mo += m.nb.length;
+    mbuf.writeUInt8(m.cidx & 0xff, mo); mo += 1;
   }
-  return buf;
+  return Buffer.concat([header, sharedBots.buf, pbuf, fbuf, ybuf, mbuf]);
 }
 function sendBin(ws, buf) { try { if (ws.readyState === 1) ws.send(buf); } catch (e) {} }
 setInterval(() => { try { tick(); } catch (e) { console.error("tick:", e); } }, TICK_MS);
 let snapN = 0;
 setInterval(() => {
   const withFood = (snapN++ % 2 === 0); // voer elke 2e snapshot: halveert dataverkeer
+  buildSharedBots(); // bots 1× serialiseren i.p.v. per speler (scheelt CPU bij drukte)
   for (const [id] of G.players) {
     const p = G.players.get(id);
     if (p && !p.done) sendBin(p.ws, snapshotBin(id, withFood));
