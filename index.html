@@ -52,6 +52,7 @@
   #cashBtn .tmr{font-size:12px;color:#fff;min-height:16px;font-variant-numeric:tabular-nums}
   #cashBtn.charging{border-color:#ffe98a;background:radial-gradient(circle at 32% 28%,#6b5514,#3a2f08 70%);box-shadow:0 0 34px rgba(255,216,77,.45)}
   #cashHint{font-size:11px;color:var(--dim);background:rgba(0,0,0,.5);padding:5px 10px;border-radius:999px;max-width:190px;text-align:center}
+  #dbg{position:fixed;top:64px;left:50%;transform:translateX(-50%);z-index:10;pointer-events:none;font-family:monospace;font-size:11px;color:#8f9;text-shadow:1px 1px 0 #000;background:rgba(0,0,0,.45);padding:4px 10px;border-radius:8px;white-space:nowrap}
   /* ---------- multiplayer / inputs ---------- */
   #cashWrap2{position:fixed;left:16px;bottom:170px;z-index:12;display:none;flex-direction:column;align-items:center;gap:8px}
   #cashRing2{position:relative;width:112px;height:112px}
@@ -167,6 +168,7 @@
 
 <div id="feed"></div>
 <div id="toast"></div>
+<div id="dbg"></div>
 <canvas id="mini" width="150" height="150"></canvas>
 
 <div id="cashWrap">
@@ -645,6 +647,12 @@ function netLoop(){
     } else $('cashTmr').textContent='HOLD 10s / Q';
   }
   if(now-(S.hudT||0)>150){ S.hudT=now; updateHUD(); } // HUD 7×/s is zat (scheelt DOM-werk)
+  // debug-regel: fps + snapshot-tempo + jitter + ping + aantallen (uit met P)
+  S.fps=S.fps?S.fps*0.95+(1000/Math.max(1,now-(S.lastF||now)))*0.05:60; S.lastF=now;
+  if(S.dbg!==false&&now-(S.dbgT||0)>500){ S.dbgT=now;
+    $('dbg').textContent='fps '+Math.round(S.fps)+' · snap '+Math.round(S.snapAvg||0)+'ms jit '+Math.round(S.snapJit||0)+'ms · ping '+(Srv.ms==null?'…':Srv.ms+'ms')+' · bots '+S.bots.length+' · voer '+S.foods.length;
+    $('dbg').style.display='block';
+  } else if(S.dbg===false){ $('dbg').style.display='none'; }
   draw();
   requestAnimationFrame(netLoop);
 }
@@ -743,6 +751,7 @@ addEventListener('keydown',e=>{
   if(tag==='INPUT'||tag==='SELECT'||tag==='TEXTAREA') return; // niet cashen tijdens typen
   const k=e.key.toLowerCase();
   if((k==='q'||k==='c')&&!e.repeat) startCharge(); // Q = cash op pc (C blijft als alias)
+  if(k==='p'&&!e.repeat){ if(S){ S.dbg=(S.dbg===false); } toast(S&&S.dbg===false?'debug uit':'debug aan'); }
 });
 addEventListener('keyup',e=>{
   const k=e.key.toLowerCase();
